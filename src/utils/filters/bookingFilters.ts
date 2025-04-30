@@ -43,10 +43,11 @@ export const filterBookings = (bookings: Booking[], filters: FilterState): Booki
       }
     }
     
-    // Filtrado por apartamento (solo si se proporciona un filtro de apartamento)
-    if (filters.apartment && filters.apartment !== 'all' && booking.apartment !== undefined) {
-      if (booking.apartment !== filters.apartment) {
-        // console.log(`Filtro apartamento: excluye booking ${booking.id}, apartamento ${booking.apartment} != ${filters.apartment}`);
+    // Filtrado por apartamento(s) (ahora puede ser un array de apartamentos)
+    if (filters.apartment && filters.apartment.length > 0 && booking.apartment !== undefined) {
+      // Si filters.apartment es un array, verificamos si el apartamento de la reserva está en el array
+      if (!filters.apartment.includes(booking.apartment)) {
+        // console.log(`Filtro apartamento: excluye booking ${booking.id}, apartamento ${booking.apartment} no está en [${filters.apartment.join(', ')}]`);
         return false;
       }
     }
