@@ -11,7 +11,14 @@ const USER_ALLOWED_APARTMENTS = ['Trindade 1', 'Trindade 2', 'Trindade 4'];
 // Función para comprobar si un apartamento está permitido para usuarios normales
 // Exportamos la función para poder usarla en dataService.ts
 export const isApartmentAllowedForUser = (apartmentName: string): boolean => {
-  return USER_ALLOWED_APARTMENTS.some(allowed => apartmentName.includes(allowed));
+  // Usar una comparación exacta en lugar de includes() para evitar falsos positivos
+  // Ejemplo: "No Trindade 1" sería detectado incorrectamente con includes()
+  return USER_ALLOWED_APARTMENTS.some(allowed => 
+    apartmentName === allowed || 
+    // También permitimos si el nombre del apartamento comienza con el nombre permitido seguido de un guion o espacio
+    apartmentName.startsWith(allowed + ' ') || 
+    apartmentName.startsWith(allowed + '-')
+  );
 };
 
 // Función para mapear los registros de Airtable al formato de nuestra aplicación

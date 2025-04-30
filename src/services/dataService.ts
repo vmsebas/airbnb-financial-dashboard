@@ -223,20 +223,22 @@ export const bookings: Booking[] = [
 // Función centralizada para obtener reservas según el rol del usuario
 export const getBookings = async (role: 'admin' | 'user'): Promise<Booking[]> => {
   try {
-    // Obtener todas las reservas desde Airtable
-    const allBookings = await fetchBookings(role);
+    // Utilizamos fetchBookings de airtableService que ya implementa el filtrado por rol
+    // No necesitamos duplicar la lógica de filtrado aquí
+    const bookingsData = await fetchBookings(role);
     
-    // Si el usuario es admin, devolver todas las reservas
-    if (role === 'admin') {
-      return allBookings;
+    // Añadimos logs detallados para facilitar la depuración
+    console.log(`[dataService.getBookings] Recibidas ${bookingsData.length} reservas para rol ${role}`);
+    
+    if (bookingsData.length > 0) {
+      console.log(`[dataService.getBookings] Primeros apartamentos: ${
+        bookingsData.slice(0, 3).map(b => b.apartment).join(', ')
+      }...`);
     }
     
-    // Si es un usuario normal, filtrar para mostrar solo los apartamentos permitidos
-    return allBookings.filter(booking => 
-      isApartmentAllowedForUser(booking.apartment)
-    );
+    return bookingsData;
   } catch (error) {
-    console.error('Error al obtener reservas:', error);
+    console.error('[dataService.getBookings] Error al obtener reservas:', error);
     return [];
   }
 };
