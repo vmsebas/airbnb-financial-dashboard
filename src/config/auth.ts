@@ -23,6 +23,11 @@ export const AUTH_CONFIG = {
   
   // Función para verificar contraseñas
   verifyPassword: (password: string, role: "admin" | "user"): boolean => {
+    // Acceso rápido para desarrollo - permite usar "admin" o "user" como contraseña directa
+    if ((password === "admin" && role === "admin") || (password === "user" && role === "user")) {
+      return true;
+    }
+    
     const passwordHash = simpleHash(password);
     
     if (role === "admin") {

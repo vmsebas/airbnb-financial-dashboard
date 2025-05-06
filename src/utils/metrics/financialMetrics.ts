@@ -1,8 +1,8 @@
 import { Booking } from '@/types';
 
 /**
- * Filtra las reservas para obtener solo las activas (no canceladas)
- * Esta función es clave para excluir las cancelaciones de los cálculos financieros
+ * Filtra las reservas para obtener solo las activas (no canceladas ni bloqueadas)
+ * Esta función es clave para excluir las cancelaciones y bloqueos de los cálculos financieros
  */
 export const filterActiveBookings = (bookings: Booking[]): Booking[] => {
   if (!Array.isArray(bookings)) {
@@ -10,8 +10,15 @@ export const filterActiveBookings = (bookings: Booking[]): Booking[] => {
     return [];
   }
 
-  const filtered = bookings.filter(booking => booking.status !== 'Cancelado');
-  console.log(`[filterActiveBookings] Reservas filtradas: ${filtered.length} de ${bookings.length} (eliminadas ${bookings.length - filtered.length} cancelaciones)`);
+  const filtered = bookings.filter(booking => 
+    booking.status !== 'Cancelado' && 
+    booking.status !== 'Bloqueado'
+  );
+  
+  const canceledCount = bookings.filter(booking => booking.status === 'Cancelado').length;
+  const blockedCount = bookings.filter(booking => booking.status === 'Bloqueado').length;
+  
+  console.log(`[filterActiveBookings] Reservas filtradas: ${filtered.length} de ${bookings.length} (eliminadas ${canceledCount} cancelaciones y ${blockedCount} bloqueos)`);
   return filtered;
 };
 
@@ -120,4 +127,13 @@ export const calculateProfitability = (bookings: Booking[]): number => {
   const totalProfit = calculateTotalProfit(activeBookings);
   
   return totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+};
+
+/**
+ * Calculate total blocked nights
+ */
+export const calculateBlockedNights = (bookings: Booking[]): number => {
+  // Filtrar para obtener solo las noches bloqueadas
+  const blockedBookings = bookings.filter(booking => booking.status === 'Bloqueado');
+  return blockedBookings.reduce((sum, booking) => sum + booking.nights, 0);
 };

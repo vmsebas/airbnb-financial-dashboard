@@ -90,33 +90,42 @@ export const prepareComparativeData = (currentData: any[], previousData: any[]) 
  * Calculate data for apartment profitability analysis
  */
 export const calculateApartmentProfitability = (bookings: Booking[]) => {
-  // Filtrar las reservas canceladas
+  // Filtrar las reservas canceladas (pero mantener las bloqueadas para contabilizarlas)
   const activeBookings = filterActiveBookings(bookings);
   
-  // Obtener lista de apartamentos únicos
+  // Obtener lista de apartamentos únicos (incluyendo todos los apartamentos, incluso los que solo tienen noches bloqueadas)
   const apartmentsSet = new Set<string>();
-  activeBookings.forEach(booking => apartmentsSet.add(booking.apartment));
+  bookings.forEach(booking => apartmentsSet.add(booking.apartment));
   const apartments = Array.from(apartmentsSet);
   
   return apartments.map(apartment => {
+    // Reservas activas (no canceladas ni bloqueadas) para este apartamento
     const apartmentBookings = activeBookings.filter(b => b.apartment === apartment);
+    
+    // Reservas bloqueadas para este apartamento
+    const blockedBookings = bookings.filter(b => 
+      b.apartment === apartment && 
+      b.status === 'Bloqueado'
+    );
     
     const revenue = calculateTotalRevenue(apartmentBookings);
     const profit = calculateTotalProfit(apartmentBookings);
     const commissions = calculateTotalCommissions(apartmentBookings);
     const cleaningFees = calculateTotalCleaningFees(apartmentBookings);
     const totalNights = apartmentBookings.reduce((sum, b) => sum + b.nights, 0);
+    const blockedNights = blockedBookings.reduce((sum, b) => sum + b.nights, 0);
     
+    // Estructura actualizada para que coincida con lo que espera ApartmentList
     return {
-      name: apartment,
+      apartment: apartment,
       bookings: apartmentBookings.length,
-      revenue,
-      profit,
-      commissions,
-      cleaningFees,
+      revenue: revenue,
+      profit: profit,
+      nights: totalNights,
+      blockedNights: blockedNights,
       profitability: revenue > 0 ? (profit / revenue) * 100 : 0,
-      averageRate: totalNights > 0 ? revenue / totalNights : 0,
-      totalNights,
+      revenuePerNight: totalNights > 0 ? revenue / totalNights : 0,
+      profitPerNight: totalNights > 0 ? profit / totalNights : 0
     };
   });
 };
