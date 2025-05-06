@@ -5,11 +5,10 @@ import { useFilters } from '@/context/FilterContext';
 import { fetchBookings } from '@/services/airtableService';
 import { filterBookings } from '@/utils/filterUtils';
 import * as dashboardMetricsService from '@/services/dashboardMetricsService';
-
-const formatter = new Intl.NumberFormat('es-ES', {
-  style: 'currency',
-  currency: 'EUR',
-});
+import { MultiYearComparisonChart } from '@/components/charts/MultiYearComparisonChart';
+import { ComparativeMetricCard } from '@/components/dashboard/ComparativeMetricCard';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { currencyFormatter, percentFormatter } from '@/utils/formatters';
 
 const AdminDashboard = () => {
   const { appliedFilters } = useFilters();
@@ -19,6 +18,15 @@ const AdminDashboard = () => {
     bookingSourceData: []
   });
   const [loading, setLoading] = useState(true);
+  const [comparisonData, setComparisonData] = useState<any>(null);
+  const [monthlyComparisonData, setMonthlyComparisonData] = useState<any[]>([]);
+
+  // Para debugging
+  useEffect(() => {
+    console.log("Valores actuales de los filtros aplicados:", appliedFilters);
+    console.log("Modo de comparación:", appliedFilters.compareMode);
+    console.log("Años para comparar:", appliedFilters.compareYears);
+  }, [appliedFilters]);
 
   // Load data for advanced analysis components
   useEffect(() => {
@@ -29,80 +37,164 @@ const AdminDashboard = () => {
         console.log('[AdminDashboard] Filtros aplicados:', appliedFilters);
         
         // Fetch bookings for current and previous year
-        const currentYearBookings = await fetchBookings('admin');
-        console.log(`[AdminDashboard] Total de reservas obtenidas: ${currentYearBookings.length}`);
+        const allBookings = await fetchBookings('admin');
+        console.log(`[AdminDashboard] Total de reservas obtenidas: ${allBookings.length}`);
         
         // Filter bookings
-        const filteredCurrentBookings = filterBookings(currentYearBookings, appliedFilters);
-        console.log(`[AdminDashboard] Reservas filtradas: ${filteredCurrentBookings.length} de ${currentYearBookings.length}`);
+        const filteredCurrentBookings = filterBookings(allBookings, appliedFilters);
+        console.log(`[AdminDashboard] Reservas filtradas: ${filteredCurrentBookings.length}`);
         
-        if (filteredCurrentBookings.length > 0) {
-          console.log('[AdminDashboard] Primeros apartamentos después de filtrar:', 
-            filteredCurrentBookings.slice(0, 3).map(b => b.apartment).join(', '));
-        }
+        // Prepare data for revenue chart
+        const revenueData = dashboardMetricsService.prepareMonthlyData(filteredCurrentBookings, appliedFilters.year);
+        console.log('[AdminDashboard] Datos de ingresos mensuales generados:', revenueData);
         
-        // Prepare data for the previous year
-        const lastYearFilter = {...appliedFilters, year: appliedFilters.year - 1};
-        const filteredPreviousBookings = filterBookings(currentYearBookings, lastYearFilter);
-        console.log(`[AdminDashboard] Reservas año anterior: ${filteredPreviousBookings.length}`);
+        // Prepare data for profit chart
+        const profitData = dashboardMetricsService.calculateApartmentProfitability(filteredCurrentBookings);
+        console.log('[AdminDashboard] Datos de rentabilidad por apartamento generados:', profitData);
         
-        // Generate monthly data - using the exported prepareMonthlyData function
-        const currentYearData = dashboardMetricsService.prepareMonthlyData(filteredCurrentBookings, appliedFilters.year);
-        const previousYearData = dashboardMetricsService.prepareMonthlyData(filteredPreviousBookings, appliedFilters.year - 1);
-        
-        // Create comparative revenue data
-        const revenueData = currentYearData.map((month, index) => {
-          const lastYearMonth = previousYearData[index] || { revenue: 0 };
-          return {
-            name: month.name,
-            thisYear: month.revenue,
-            lastYear: lastYearMonth.revenue
-          };
-        });
-        
-        // Profit data by month
-        const profitData = currentYearData.map(month => ({
-          name: month.name,
-          revenue: month.revenue,
-          profit: month.profit
-        }));
-        
-        // Booking source data
+        // Prepare data for booking source chart
         const bookingSourceData = dashboardMetricsService.generateBookingSources(filteredCurrentBookings);
+        console.log('[AdminDashboard] Datos de fuentes de reserva generados:', bookingSourceData);
+        
+        // Prepare comparison data if in compare mode
+        if (appliedFilters.compareMode && appliedFilters.compareYears.length > 0) {
+          console.log('[AdminDashboard] Generando datos de comparación para años:', appliedFilters.compareYears);
+          
+          const comparisonResult = dashboardMetricsService.generateYearlyComparison(
+            allBookings,
+            appliedFilters.year,
+            appliedFilters.compareYears
+          );
+          
+          console.log('[AdminDashboard] Datos de comparación anual generados:', comparisonResult);
+          setComparisonData(comparisonResult);
+          
+          // Generate monthly comparison data
+          const monthlyComparison = dashboardMetricsService.generateMultiYearComparison(
+            allBookings,
+            appliedFilters.year,
+            appliedFilters.compareYears
+          );
+          
+          console.log('[AdminDashboard] Datos de comparación mensual generados:', monthlyComparison);
+          setMonthlyComparisonData(monthlyComparison);
+        } else {
+          setComparisonData(null);
+          setMonthlyComparisonData([]);
+        }
         
         setAdvancedData({
           revenueData,
           profitData,
           bookingSourceData
         });
+        
+        setLoading(false);
       } catch (error) {
-        console.error("Error loading advanced data:", error);
-      } finally {
+        console.error('[AdminDashboard] Error al cargar datos avanzados:', error);
         setLoading(false);
       }
     };
     
     loadAdvancedData();
   }, [appliedFilters]);
+  
+  // Create year labels for the comparison chart
+  const createYearLabels = () => {
+    return [appliedFilters.year, ...appliedFilters.compareYears].map(year => year.toString());
+  };
+  
+  // Prepare comparison card data
+  const prepareComparisonCardData = () => {
+    if (!comparisonData) return [];
+    
+    return comparisonData.comparisonData.map((yearData: any) => ({
+      year: yearData.year,
+      value: yearData.revenue,
+      formattedValue: currencyFormatter.format(yearData.revenue)
+    }));
+  };
 
   return (
-    <>
-      <DashboardBase 
-        role="admin"
-        title="Panel Administrativo"
-        description="Resumen financiero y métricas avanzadas de todos los apartamentos"
-        showAdvancedMetrics={true}
-      />
-      
-      {!loading && (
-        <AdminAnalysisDashboard 
-          revenueData={advancedData.revenueData}
-          profitData={advancedData.profitData}
-          bookingSourceData={advancedData.bookingSourceData}
-          formatter={formatter}
-        />
-      )}
-    </>
+    <MainLayout>
+      <DashboardBase>
+        <div className="container mx-auto px-4 py-6">
+          <h1 className="text-2xl font-bold mb-6">Panel de Administración</h1>
+          
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rental-primary"></div>
+            </div>
+          ) : (
+            <div>
+              {/* Sección de comparación anual */}
+              {comparisonData && (
+                <div>
+                  <h2 className="text-xl font-bold mb-4">Comparación Anual</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <ComparativeMetricCard
+                      title="Ingresos Totales"
+                      description="Incluye tarifa base, limpieza, etc."
+                      currentYearValue={comparisonData.currentYear.revenue}
+                      comparisonData={comparisonData.comparisonData.map((yearData: any) => ({
+                        year: yearData.year,
+                        value: yearData.revenue,
+                        formattedValue: currencyFormatter.format(yearData.revenue)
+                      }))}
+                      formatValue={(value) => currencyFormatter.format(value)}
+                    />
+                    
+                    <ComparativeMetricCard
+                      title="Beneficio Total"
+                      description="Ingresos menos gastos"
+                      currentYearValue={comparisonData.currentYear.profit}
+                      comparisonData={comparisonData.comparisonData.map((yearData: any) => ({
+                        year: yearData.year,
+                        value: yearData.profit,
+                        formattedValue: currencyFormatter.format(yearData.profit)
+                      }))}
+                      formatValue={(value) => currencyFormatter.format(value)}
+                    />
+                    
+                    <ComparativeMetricCard
+                      title="Tasa de Ocupación"
+                      description="Porcentaje de días ocupados"
+                      currentYearValue={comparisonData.currentYear.occupancyRate}
+                      comparisonData={comparisonData.comparisonData.map((yearData: any) => ({
+                        year: yearData.year,
+                        value: yearData.occupancyRate,
+                        formattedValue: percentFormatter(yearData.occupancyRate)
+                      }))}
+                      formatValue={(value) => percentFormatter(value)}
+                    />
+                  </div>
+                  
+                  <div className="mt-6">
+                    <MultiYearComparisonChart
+                      title={`Comparación de Ingresos Mensuales (${[appliedFilters.year, ...appliedFilters.compareYears].join(' vs ')})`}
+                      data={monthlyComparisonData}
+                      yearLabels={createYearLabels()}
+                      formatter={(value) => currencyFormatter.format(value).replace(/[^0-9,.]/g, '')}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* Dashboard de análisis administrativo */}
+              <div className="mt-8">
+                <h2 className="text-xl font-bold mb-4">Análisis Avanzado (Solo Administradores)</h2>
+                <AdminAnalysisDashboard 
+                  revenueData={advancedData.revenueData}
+                  profitData={advancedData.profitData}
+                  bookingSourceData={advancedData.bookingSourceData}
+                  formatter={currencyFormatter}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </DashboardBase>
+    </MainLayout>
   );
 };
 

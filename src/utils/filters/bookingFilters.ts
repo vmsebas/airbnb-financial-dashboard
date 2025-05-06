@@ -27,11 +27,20 @@ export const filterBookings = (bookings: Booking[], filters: FilterState): Booki
       return false;
     }
     
-    // Filtrado por año
-    if (filters.year && booking.year !== undefined && booking.year !== null) {
+    // Filtrado por año (solo si no estamos en modo comparación)
+    if (!filters.compareMode && filters.year && booking.year !== undefined && booking.year !== null) {
       if (booking.year !== filters.year) {
-        // console.log(`Filtro año: excluye booking ${booking.id}, año ${booking.year} != ${filters.year}`);
         return false;
+      }
+    }
+    
+    // Si estamos en modo comparación, incluimos reservas del año actual y años de comparación
+    if (filters.compareMode && filters.compareYears && filters.compareYears.length > 0) {
+      if (booking.year !== undefined && booking.year !== null) {
+        // Incluir si es el año actual o está en la lista de años de comparación
+        if (booking.year !== filters.year && !filters.compareYears.includes(booking.year)) {
+          return false;
+        }
       }
     }
     

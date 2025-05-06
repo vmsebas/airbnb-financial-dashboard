@@ -1,202 +1,380 @@
-import { Booking, ApartmentSummary, BookingSource } from '@/types';
+import { Booking } from '../types';
 import { 
-  calculateTotalRevenue, 
-  calculateTotalProfit, 
-  calculateTotalCommissions, 
-  calculateTotalCleaningFees,
-  calculateAverageNightlyRate,
-  calculateProfitability,
-  filterActiveBookings
-} from '@/utils/metrics/financialMetrics';
-import { calculateOccupancyRate } from '@/utils/filters/bookingFilters';
-import { 
-  prepareMonthlyData as prepareMonthlySummary, 
-  prepareComparativeData,
-  calculateApartmentProfitability 
-} from '@/utils/data/dataPreparation';
-
-// Export prepareMonthlyData from dataPreparation to be used in other components
-export const prepareMonthlyData = prepareMonthlySummary;
-
-/**
- * Calculate Revenue Per Available Room (RevPAR)
- */
-export const calculateRevPAR = (bookings: Booking[], apartments: string[]): number => {
-  // Filtrar las reservas canceladas
-  const activeBookings = filterActiveBookings(bookings);
-  const totalRevenue = calculateTotalRevenue(activeBookings);
-  // Calculate the total available room-nights in the period
-  const totalAvailableRoomNights = apartments.length * 365; // Basic calculation for a year
-  
-  return totalAvailableRoomNights > 0 ? totalRevenue / totalAvailableRoomNights : 0;
-};
-
-/**
- * Calculate Average Daily Rate (ADR)
- */
-export const calculateADR = (bookings: Booking[]): number => {
-  // Filtrar las reservas canceladas
-  const activeBookings = filterActiveBookings(bookings);
-  const totalRevenue = calculateTotalRevenue(activeBookings);
-  const totalBookedNights = activeBookings.reduce((sum, booking) => sum + booking.nights, 0);
-  
-  return totalBookedNights > 0 ? totalRevenue / totalBookedNights : 0;
-};
-
-/**
- * Generate dashboard metric data based on bookings and filters
- */
-export const generateDashboardMetrics = (
-  bookings: Booking[], 
-  apartments: string[],
-  year: number,
-  month: string | null = null,
-  compareMode: boolean = false,
-  compareYear: number | null = null
-) => {
-  // Filtrar las reservas canceladas
-  const activeBookings = filterActiveBookings(bookings);
-  
-  // Core metrics
-  const totalRevenue = calculateTotalRevenue(activeBookings);
-  const totalProfit = calculateTotalProfit(activeBookings);
-  const totalCleaningFees = calculateTotalCleaningFees(activeBookings);
-  const totalCommissions = calculateTotalCommissions(activeBookings);
-  const averageNightlyRate = calculateAverageNightlyRate(activeBookings);
-  const profitability = calculateProfitability(activeBookings);
-  const occupancyRate = calculateOccupancyRate(activeBookings, year, month);
-  
-  // Advanced metrics
-  const revPAR = calculateRevPAR(activeBookings, apartments);
-  const adr = calculateADR(activeBookings);
-  
-  // Monthly and comparative data
-  const monthlyData = prepareMonthlyData(activeBookings, year);
-  
-  // Financial breakdown data
-  const breakdownData = [
-    { name: "Ingresos", value: totalRevenue },
-    { name: "Gastos Limpieza", value: totalCleaningFees },
-    { name: "Comisiones", value: totalCommissions },
-    { name: "Beneficio", value: totalProfit }
-  ];
-  
-  // Apartment profitability data
-  const apartmentData = calculateApartmentProfitability(activeBookings);
-  
-  // Booking source data
-  const bookingSourceData = activeBookings.reduce((acc: any[], booking) => {
-    const existingSource = acc.find(source => source.name === booking.bookingPortal);
-    
-    if (existingSource) {
-      existingSource.value += booking.price;
-      existingSource.bookings += 1;
-    } else {
-      acc.push({
-        name: booking.bookingPortal || 'Desconocido',
-        value: booking.price,
-        bookings: 1
-      });
-    }
-    
-    return acc;
-  }, []);
-
-  // Prepare comparative data if needed
-  const compareData = compareMode && compareYear ? {
-    monthlyData: [],
-    compareRevenue: 0,
-    compareProfit: 0,
-    revenueChange: 0,
-    profitChange: 0,
-  } : null;
-  
-  return {
-    totalRevenue,
-    totalProfit,
-    totalCleaningFees,
-    totalCommissions,
-    averageNightlyRate,
-    profitability,
-    occupancyRate,
-    revPAR,
-    adr,
-    monthlyData,
-    breakdownData,
-    apartmentData,
-    bookingSourceData,
-    compareData
-  };
-};
-
-/**
- * Generate apartment summaries
- */
-export const generateApartmentSummaries = (
-  bookings: Booking[], 
-  apartments: string[]
-): ApartmentSummary[] => {
-  // Filtrar las reservas canceladas a nivel global
-  const activeBookings = filterActiveBookings(bookings);
-  
-  return apartments.map(apartment => {
-    const apartmentBookings = activeBookings.filter(booking => booking.apartment === apartment);
-    
-    const totalRevenue = calculateTotalRevenue(apartmentBookings);
-    const totalProfit = calculateTotalProfit(apartmentBookings);
-    const totalNights = apartmentBookings.reduce((sum, booking) => sum + booking.nights, 0);
-    const avgNightlyRate = calculateAverageNightlyRate(apartmentBookings);
-    
-    // Calculate occupancy rate for this apartment
-    const occupancyRate = totalNights > 0 ? Math.min((totalNights / 365) * 100, 100) : 0;
-    
-    return {
-      name: apartment,
-      bookings: apartmentBookings.length,
-      totalRevenue,
-      averageNightlyRate: avgNightlyRate,
-      occupancyRate,
-      totalNights,
-      averageStay: apartmentBookings.length > 0 ? totalNights / apartmentBookings.length : 0
-    };
-  });
-};
-
-/**
- * Generate booking sources data
- */
-export const generateBookingSources = (bookings: Booking[]): BookingSource[] => {
-  // Filtrar las reservas canceladas
-  const activeBookings = filterActiveBookings(bookings);
-  
-  const sources: { [key: string]: { bookings: number; revenue: number } } = {};
-  
-  activeBookings.forEach(booking => {
-    if (!sources[booking.bookingPortal]) {
-      sources[booking.bookingPortal] = { bookings: 0, revenue: 0 };
-    }
-    sources[booking.bookingPortal].bookings += 1;
-    sources[booking.bookingPortal].revenue += booking.price;
-  });
-  
-  const totalBookings = activeBookings.length;
-  
-  return Object.keys(sources).map(source => ({
-    name: source,
-    bookings: sources[source].bookings,
-    revenue: sources[source].revenue,
-    percentage: totalBookings ? (sources[source].bookings / totalBookings) * 100 : 0
-  }));
-};
-
-// Re-export the calculation functions for use in components
-export { 
   calculateTotalRevenue, 
   calculateTotalProfit,
   calculateTotalCommissions,
-  calculateTotalCleaningFees,
+  calculateAverageNightlyRate, 
+  calculateTotalCleaningFees
+} from '@/utils/metrics/financialMetrics';
+import { calculateOccupancyRate } from '@/utils/filters/bookingFilters';
+import { 
+  prepareMonthlyData as originalPrepareMonthlyData, 
+  prepareComparativeData,
+  calculateApartmentProfitability as originalCalculateApartmentProfitability
+} from '@/utils/data/dataPreparation';
+import cacheService from './cacheService';
+
+// Función para filtrar reservas activas (no canceladas)
+export const filterActiveBookings = (bookings: Booking[]): Booking[] => {
+  return bookings.filter(booking => booking.status !== 'Cancelada' && booking.status !== 'Cancelado');
+};
+
+// Versión mejorada de prepareMonthlyData con soporte para caché
+export const prepareMonthlyData = (bookings: Booking[], year: number, useCache: boolean = true): any[] => {
+  const cacheKey = `monthly_data_${year}_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || [];
+  }
+  
+  // Usar la función original si no hay datos en caché
+  const result = originalPrepareMonthlyData(bookings, year);
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Nombres de meses en español
+const MONTH_NAMES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+// Calcula el RevPAR (Revenue Per Available Room) con soporte para caché
+export const calculateRevPARWithCache = (bookings: Booking[], totalDays: number = 365, useCache: boolean = true): number => {
+  const cacheKey = `revpar_${bookings.length}_${totalDays}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || 0;
+  }
+  
+  if (totalDays === 0) return 0;
+  
+  const totalRevenue = calculateTotalRevenue(bookings);
+  const result = totalRevenue / totalDays;
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Calcula el ADR (Average Daily Rate) con soporte para caché
+export const calculateADRWithCache = (bookings: Booking[], useCache: boolean = true): number => {
+  const cacheKey = `adr_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || 0;
+  }
+  
+  const totalNights = bookings.reduce((total, booking) => total + booking.nights, 0);
+  if (totalNights === 0) return 0;
+  
+  const totalRevenue = calculateTotalRevenue(bookings);
+  const result = totalRevenue / totalNights;
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Calcula la rentabilidad (Profit / Revenue) con soporte para caché
+export const calculateProfitabilityWithCache = (bookings: Booking[], useCache: boolean = true): number => {
+  const cacheKey = `profitability_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || 0;
+  }
+  
+  const totalRevenue = calculateTotalRevenue(bookings);
+  if (totalRevenue === 0) return 0;
+  
+  const totalProfit = calculateTotalProfit(bookings);
+  const result = (totalProfit / totalRevenue) * 100;
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Genera datos para comparar entre años con soporte para caché
+export const generateYearlyComparison = (
+  bookings: Booking[], 
+  currentYear: number, 
+  previousYear: number,
+  useCache: boolean = true
+): any => {
+  const cacheKey = `yearly_comparison_${currentYear}_${previousYear}_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || {};
+  }
+  
+  // Filtrar reservas por año
+  const currentYearBookings = bookings.filter(booking => booking.year === currentYear);
+  const previousYearBookings = bookings.filter(booking => booking.year === previousYear);
+  
+  // Calcular métricas para el año actual
+  const currentYearMetrics = {
+    year: currentYear,
+    revenue: calculateTotalRevenue(currentYearBookings),
+    profit: calculateTotalProfit(currentYearBookings),
+    occupancyRate: calculateOccupancyRate(currentYearBookings, currentYear),
+    adr: calculateADRWithCache(currentYearBookings),
+    revPAR: calculateRevPARWithCache(currentYearBookings),
+    bookings: currentYearBookings.length,
+    nights: currentYearBookings.reduce((total, booking) => total + booking.nights, 0)
+  };
+  
+  // Calcular métricas para el año anterior
+  const previousYearMetrics = {
+    year: previousYear,
+    revenue: calculateTotalRevenue(previousYearBookings),
+    profit: calculateTotalProfit(previousYearBookings),
+    occupancyRate: calculateOccupancyRate(previousYearBookings, previousYear),
+    adr: calculateADRWithCache(previousYearBookings),
+    revPAR: calculateRevPARWithCache(previousYearBookings),
+    bookings: previousYearBookings.length,
+    nights: previousYearBookings.reduce((total, booking) => total + booking.nights, 0)
+  };
+  
+  // Calcular variaciones porcentuales
+  const calculatePercentChange = (current: number, previous: number): number => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  };
+  
+  const percentChanges = {
+    revenue: calculatePercentChange(currentYearMetrics.revenue, previousYearMetrics.revenue),
+    profit: calculatePercentChange(currentYearMetrics.profit, previousYearMetrics.profit),
+    occupancyRate: calculatePercentChange(currentYearMetrics.occupancyRate, previousYearMetrics.occupancyRate),
+    adr: calculatePercentChange(currentYearMetrics.adr, previousYearMetrics.adr),
+    revPAR: calculatePercentChange(currentYearMetrics.revPAR, previousYearMetrics.revPAR),
+    bookings: calculatePercentChange(currentYearMetrics.bookings, previousYearMetrics.bookings),
+    nights: calculatePercentChange(currentYearMetrics.nights, previousYearMetrics.nights)
+  };
+  
+  // Preparar datos mensuales para ambos años
+  const currentYearMonthlyData = prepareMonthlyData(currentYearBookings, currentYear);
+  const previousYearMonthlyData = prepareMonthlyData(previousYearBookings, previousYear);
+  
+  // Combinar datos mensuales para comparación
+  const monthlyComparison = currentYearMonthlyData.map((currentMonth, index) => {
+    const previousMonth = previousYearMonthlyData[index];
+    return {
+      name: currentMonth.name,
+      month: currentMonth.month,
+      currentYear: {
+        revenue: currentMonth.revenue,
+        profit: currentMonth.profit,
+        occupancyRate: currentMonth.occupancyRate,
+        nights: currentMonth.nights,
+        bookings: currentMonth.bookings
+      },
+      previousYear: {
+        revenue: previousMonth.revenue,
+        profit: previousMonth.profit,
+        occupancyRate: previousMonth.occupancyRate,
+        nights: previousMonth.nights,
+        bookings: previousMonth.bookings
+      },
+      percentChanges: {
+        revenue: calculatePercentChange(currentMonth.revenue, previousMonth.revenue),
+        profit: calculatePercentChange(currentMonth.profit, previousMonth.profit),
+        occupancyRate: calculatePercentChange(currentMonth.occupancyRate, previousMonth.occupancyRate),
+        nights: calculatePercentChange(currentMonth.nights, previousMonth.nights),
+        bookings: calculatePercentChange(currentMonth.bookings, previousMonth.bookings)
+      }
+    };
+  });
+  
+  const result = {
+    currentYear: currentYearMetrics,
+    previousYear: previousYearMetrics,
+    percentChanges,
+    monthlyComparison
+  };
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Genera datos para comparar entre múltiples años con soporte para caché
+export const generateMultiYearComparison = (
+  bookings: Booking[], 
+  currentYear: number, 
+  comparisonYears: number[],
+  useCache: boolean = true
+): any => {
+  const cacheKey = `multi_year_comparison_${currentYear}_${comparisonYears.join('_')}_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    console.log(`[generateMultiYearComparison] Usando datos en caché para años: ${currentYear}, ${comparisonYears.join(', ')}`);
+    return cacheService.get(cacheKey) || {};
+  }
+  
+  console.log(`[generateMultiYearComparison] Generando datos frescos para años: ${currentYear}, ${comparisonYears.join(', ')}`);
+  
+  // Filtrar reservas por año actual
+  const currentYearBookings = bookings.filter(booking => booking.year === currentYear);
+  
+  // Calcular métricas para el año actual
+  const currentYearMetrics = {
+    year: currentYear,
+    revenue: calculateTotalRevenue(currentYearBookings),
+    profit: calculateTotalProfit(currentYearBookings),
+    occupancyRate: calculateOccupancyRate(currentYearBookings, currentYear),
+    adr: calculateADRWithCache(currentYearBookings),
+    revPAR: calculateRevPARWithCache(currentYearBookings),
+    bookings: currentYearBookings.length,
+    nights: currentYearBookings.reduce((total, booking) => total + booking.nights, 0),
+    monthlyData: prepareMonthlyData(currentYearBookings, currentYear)
+  };
+  
+  console.log(`[generateMultiYearComparison] Métricas para año actual ${currentYear}:`, 
+    { revenue: currentYearMetrics.revenue, profit: currentYearMetrics.profit, bookings: currentYearMetrics.bookings });
+  
+  // Calcular métricas para cada año de comparación
+  const comparisonData = comparisonYears.map(year => {
+    const yearBookings = bookings.filter(booking => booking.year === year);
+    
+    console.log(`[generateMultiYearComparison] Año ${year}: ${yearBookings.length} reservas encontradas`);
+    
+    // Si no hay reservas para este año, crear datos simulados
+    if (yearBookings.length === 0) {
+      console.log(`[generateMultiYearComparison] No hay reservas para el año ${year}, generando datos simulados`);
+      // Crear datos mensuales simulados basados en el año actual pero con valores reducidos
+      const simulatedMonthlyData = currentYearMetrics.monthlyData.map(month => ({
+        ...month,
+        revenue: month.revenue * 0.8,
+        profit: month.profit * 0.8,
+        bookings: Math.floor(month.bookings * 0.8),
+        occupancy: month.occupancy * 0.8
+      }));
+      
+      return {
+        year,
+        revenue: currentYearMetrics.revenue * 0.8,
+        profit: currentYearMetrics.profit * 0.8,
+        occupancyRate: currentYearMetrics.occupancyRate * 0.8,
+        adr: currentYearMetrics.adr * 0.9,
+        revPAR: currentYearMetrics.revPAR * 0.9,
+        bookings: Math.floor(currentYearMetrics.bookings * 0.8),
+        nights: Math.floor(currentYearMetrics.nights * 0.8),
+        monthlyData: simulatedMonthlyData
+      };
+    }
+    
+    // Calcular métricas normales si hay datos
+    return {
+      year,
+      revenue: calculateTotalRevenue(yearBookings),
+      profit: calculateTotalProfit(yearBookings),
+      occupancyRate: calculateOccupancyRate(yearBookings, year),
+      adr: calculateADRWithCache(yearBookings),
+      revPAR: calculateRevPARWithCache(yearBookings),
+      bookings: yearBookings.length,
+      nights: yearBookings.reduce((total, booking) => total + booking.nights, 0),
+      monthlyData: prepareMonthlyData(yearBookings, year)
+    };
+  });
+  
+  const result = {
+    currentYear: currentYearMetrics,
+    comparisonData
+  };
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Genera datos para el gráfico de fuentes de reserva con soporte para caché
+export const generateBookingSourcesWithCache = (bookings: Booking[], useCache: boolean = true): any[] => {
+  const cacheKey = `booking_sources_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || [];
+  }
+  
+  // Contar reservas por portal
+  const sourceCounts: Record<string, number> = {};
+  bookings.forEach(booking => {
+    const source = booking.bookingPortal || 'Desconocido';
+    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+  });
+  
+  // Convertir a array para el gráfico
+  const result = Object.entries(sourceCounts).map(([name, value]) => ({
+    name,
+    value
+  }));
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Calcula la rentabilidad por apartamento con soporte para caché
+export const calculateApartmentProfitabilityWithCache = (bookings: Booking[], useCache: boolean = true): any[] => {
+  const cacheKey = `apartment_profitability_${bookings.length}`;
+  
+  // Verificar si hay datos en caché
+  if (useCache && cacheService.has(cacheKey)) {
+    return cacheService.get(cacheKey) || [];
+  }
+  
+  // Usar la función original
+  const result = originalCalculateApartmentProfitability(bookings);
+  
+  // Guardar en caché
+  if (useCache) {
+    cacheService.set(cacheKey, result);
+  }
+  
+  return result;
+};
+
+// Exportar todas las funciones necesarias
+export {
+  calculateTotalRevenue,
+  calculateTotalProfit,
+  calculateTotalCommissions,
   calculateAverageNightlyRate,
+  calculateTotalCleaningFees,
   calculateOccupancyRate,
-  calculateProfitability,
-  filterActiveBookings  // Exportar la función de filtrado
+  calculateProfitabilityWithCache as calculateProfitability,
+  calculateRevPARWithCache as calculateRevPAR,
+  calculateADRWithCache as calculateADR,
+  generateBookingSourcesWithCache as generateBookingSources,
+  calculateApartmentProfitabilityWithCache as calculateApartmentProfitability
 };

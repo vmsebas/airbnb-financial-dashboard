@@ -13,6 +13,7 @@ export interface FilterState {
   };
   compareMode: boolean;
   compareYear: number | null;
+  compareYears: number[];
 }
 
 interface FilterContextType {
@@ -42,7 +43,8 @@ const defaultFilters: FilterState = {
     to: null
   },
   compareMode: false,
-  compareYear: null
+  compareYear: null,
+  compareYears: []
 };
 
 export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -51,35 +53,11 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [currentApartment, setCurrentApartment] = useState<string | null>(null);
   const [viewContext, setViewContext] = useState<'dashboard' | 'detail'>('dashboard');
   
-  // Intentar cargar filtros guardados del localStorage
-  const [filters, setFilters] = useState<FilterState>(() => {
-    const savedFilters = localStorage.getItem('rentalFilters');
-    if (savedFilters) {
-      try {
-        const parsedFilters = JSON.parse(savedFilters);
-        console.log('Filtros recuperados de localStorage:', parsedFilters);
-        
-        // Convertir las fechas de string a Date si existen
-        if (parsedFilters.dateRange) {
-          if (parsedFilters.dateRange.from) {
-            parsedFilters.dateRange.from = new Date(parsedFilters.dateRange.from);
-          }
-          if (parsedFilters.dateRange.to) {
-            parsedFilters.dateRange.to = new Date(parsedFilters.dateRange.to);
-          }
-        }
-        
-        return parsedFilters;
-      } catch (e) {
-        console.error('Error al parsear los filtros guardados:', e);
-        return defaultFilters;
-      }
-    }
-    return defaultFilters;
-  });
-  
+  // Estado de los filtros, inicializado directamente con valores predeterminados
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+
   // Mantener un estado separado para los filtros aplicados
-  const [appliedFilters, setAppliedFilters] = useState<FilterState>(filters);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
 
   // Detectar cambios en la ruta para determinar el contexto
   useEffect(() => {
@@ -134,24 +112,6 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
   }, []);
 
-  // Guardar filtros en localStorage cuando cambien los aplicados
-  useEffect(() => {
-    try {
-      // Determinamos qué filtros guardar basados en el contexto actual
-      const filtersToSave = viewContext === 'detail' 
-        ? { ...appliedFilters, apartment: null } // No guardar el apartamento específico para vistas de detalle
-        : appliedFilters;
-        
-      // Sólo guardamos si no es una vista de detalle o si ha cambiado algo más que el apartamento
-      if (viewContext === 'dashboard' || JSON.stringify(filtersToSave) !== JSON.stringify(appliedFilters)) {
-        localStorage.setItem('rentalFilters', JSON.stringify(filtersToSave));
-        console.log('Filtros guardados en localStorage:', filtersToSave);
-      }
-    } catch (e) {
-      console.error('Error al guardar filtros en localStorage:', e);
-    }
-  }, [appliedFilters, viewContext]);
-
   const applyFilters = () => {
     console.log('Aplicando filtros:', filters);
     setAppliedFilters(prev => {
@@ -179,10 +139,22 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const toggleCompareMode = () => {
     setFilters(prev => {
       const newCompareMode = !prev.compareMode;
+      
+      // Si estamos activando el modo comparación y no hay años seleccionados,
+      // añadimos automáticamente el año anterior al actual
+      if (newCompareMode && (!prev.compareYears || prev.compareYears.length === 0)) {
+        return {
+          ...prev,
+          compareMode: newCompareMode,
+          compareYear: prev.year - 1, // Para compatibilidad con código antiguo
+          compareYears: [prev.year - 1] // Añadir el año anterior al array
+        };
+      }
+      
       return {
         ...prev,
         compareMode: newCompareMode,
-        compareYear: newCompareMode && !prev.compareYear ? prev.year - 1 : prev.compareYear
+        // Mantenemos los años de comparación si ya existen
       };
     });
   };

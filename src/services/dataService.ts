@@ -10,6 +10,33 @@ export const apartments = [
 
 // Convert the CSV data to our booking format
 export const bookings: Booking[] = [
+  // Ejemplo de noches bloqueadas
+  {
+    id: 'block-1',
+    createdAt: '2022-09-15',
+    checkIn: '2016-12-20',
+    checkOut: '2016-12-25',
+    position: 'block-1',
+    apartment: 'Trindade 4 - White Tiles',
+    guest: 'Bloqueado por mantenimiento',
+    adults: 0,
+    nights: 5,
+    children: 0,
+    status: 'Bloqueado',
+    bookingPortal: 'Manual',
+    checkInTime: '00:00',
+    checkOutTime: '00:00',
+    price: 0,
+    nightlyAverage: 0,
+    cleaningFee: 0,
+    commission: 0,
+    total: 0,
+    totalWithTax: 0,
+    paid: false,
+    year: 2016,
+    month: 'Diciembre',
+    profit: 0
+  },
   {
     id: '28445618',
     createdAt: '2022-09-15',
@@ -61,6 +88,33 @@ export const bookings: Booking[] = [
     year: 2017,
     month: 'Enero',
     profit: -60.52
+  },
+  // Ejemplo de noches bloqueadas para I Love Lisboa
+  {
+    id: 'block-2',
+    createdAt: '2022-09-15',
+    checkIn: '2017-05-01',
+    checkOut: '2017-05-10',
+    position: 'block-2',
+    apartment: 'I Love Lisboa',
+    guest: 'Bloqueado por renovación',
+    adults: 0,
+    nights: 9,
+    children: 0,
+    status: 'Bloqueado',
+    bookingPortal: 'Manual',
+    checkInTime: '00:00',
+    checkOutTime: '00:00',
+    price: 0,
+    nightlyAverage: 0,
+    cleaningFee: 0,
+    commission: 0,
+    total: 0,
+    totalWithTax: 0,
+    paid: false,
+    year: 2017,
+    month: 'Mayo',
+    profit: 0
   },
   {
     id: '28447112',
