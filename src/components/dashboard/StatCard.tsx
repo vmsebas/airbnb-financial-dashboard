@@ -60,7 +60,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         <div className="mt-2 flex items-baseline justify-between">
           <div>
             <h4 className="text-xl sm:text-2xl font-semibold text-foreground">{value}</h4>
-            {trend && (
+            {trend !== null && trend !== undefined && (
               <span className={`text-xs font-medium ${
                 trend.isPositive 
                   ? 'text-emerald-600 dark:text-emerald-400' 

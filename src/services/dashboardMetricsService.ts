@@ -314,9 +314,9 @@ export const generateMultiYearComparison = (
   return result;
 };
 
-// Genera datos para el gráfico de fuentes de reserva con soporte para caché
-export const generateBookingSourcesWithCache = (bookings: Booking[], useCache: boolean = true): any[] => {
-  const cacheKey = `booking_sources_${bookings.length}`;
+// Genera datos para el gráfico de portales de reserva con soporte para caché
+export const generateBookingChannelsWithCache = (bookings: Booking[], useCache: boolean = true): any[] => {
+  const cacheKey = `booking_channels_${bookings.length}`;
   
   // Verificar si hay datos en caché
   if (useCache && cacheService.has(cacheKey)) {
@@ -375,6 +375,6 @@ export {
   calculateProfitabilityWithCache as calculateProfitability,
   calculateRevPARWithCache as calculateRevPAR,
   calculateADRWithCache as calculateADR,
-  generateBookingSourcesWithCache as generateBookingSources,
+  generateBookingChannelsWithCache as generateBookingSources,
   calculateApartmentProfitabilityWithCache as calculateApartmentProfitability
 };

@@ -15,46 +15,31 @@ import { currencyFormatter } from '@/utils/formatters';
 
 interface RevenueChartProps {
   data: {
-    name: string;
-    revenue: number;
-    bookings?: number;
+    name: string; // Month name (e.g., "Ene", "Feb")
+    [yearKey: string]: number | string; // Revenue for each year, e.g., "2023": 5000, "2024": 6000
   }[];
   title: string;
-  compareMode?: boolean;
-  compareData?: any[];
+  yearKeys: string[]; // e.g., ["2023", "2024"]
+  yearLabels: Record<string, string>; // e.g., { "2023": "Año 2023", "2024": "Año 2024" }
 }
+
+const CHART_COLORS = ['#FF5A5F', '#00A699', '#FFB400', '#007A87', '#8E8CD8', '#FC642D'];
 
 // Eliminamos el formateador local ya que ahora usamos los formateadores centralizados
 
-export const RevenueChart: React.FC<RevenueChartProps> = ({ data, title, compareMode = false, compareData = [] }) => {
+export const RevenueChart: React.FC<RevenueChartProps> = ({ data, title, yearKeys, yearLabels }) => {
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark';
   
-  // Colores mejorados para mejor contraste en modo oscuro
-  const colors = {
-    revenue: isDarkMode ? '#FF7B82' : '#FF5A5F',
-    bookings: isDarkMode ? '#4ECDC4' : '#00A699',
-    revenueActual: isDarkMode ? '#FF7B82' : '#FF5A5F',
-    revenueAnterior: isDarkMode ? '#4ECDC4' : '#00A699',
+  const themeColors = {
     grid: isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)',
     text: isDarkMode ? '#ffffff' : '#333333',
     background: isDarkMode ? '#2d3748' : '#ffffff',
     border: isDarkMode ? '#4a5568' : '#e5e7eb',
   };
 
-  // Preparar datos para la comparación si está activada
-  const chartData = compareMode && compareData && compareData.length > 0
-    ? data.map(item => {
-        // Buscar el dato correspondiente en compareData
-        const compareItem = compareData.find(c => c.name === item.name);
-        
-        return {
-          ...item,
-          revenueActual: item.revenue, // Renombrar para claridad
-          revenueAnterior: compareItem ? compareItem.revenue : 0
-        };
-      })
-    : data;
+  // Los datos ya vienen preparados para múltiples años.
+  const chartData = data;
     
   return (
     <Card className="h-full">
@@ -73,47 +58,43 @@ export const RevenueChart: React.FC<RevenueChartProps> = ({ data, title, compare
                 bottom: 5,
               }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} />
+              <CartesianGrid strokeDasharray="3 3" stroke={themeColors.grid} />
               <XAxis 
                 dataKey="name" 
-                tick={{ fill: colors.text }}
-                axisLine={{ stroke: colors.grid }}
-                tickLine={{ stroke: colors.grid }}
+                tick={{ fill: themeColors.text }}
+                axisLine={{ stroke: themeColors.grid }}
+                tickLine={{ stroke: themeColors.grid }}
               />
               <YAxis 
                 tickFormatter={(value) => currencyFormatter.format(value).replace(/[^0-9,.]/g, '')}
-                tick={{ fill: colors.text }}
-                axisLine={{ stroke: colors.grid }}
-                tickLine={{ stroke: colors.grid }}
+                tick={{ fill: themeColors.text }}
+                axisLine={{ stroke: themeColors.grid }}
+                tickLine={{ stroke: themeColors.grid }}
               />
               <Tooltip 
                 formatter={(value) => currencyFormatter.format(Number(value))}
                 contentStyle={{ 
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                  color: colors.text,
+                  backgroundColor: themeColors.background,
+                  borderColor: themeColors.border,
+                  color: themeColors.text,
                   borderRadius: '6px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
                 }}
                 labelStyle={{ fontWeight: 'bold', marginBottom: '4px' }}
               />
               <Legend 
-                wrapperStyle={{ color: colors.text, paddingTop: '10px' }} 
+                wrapperStyle={{ color: themeColors.text, paddingTop: '10px' }} 
                 iconType="circle"
               />
-              {compareMode ? (
-                <>
-                  <Bar dataKey="revenueActual" name="Año Actual" fill={colors.revenueActual} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="revenueAnterior" name="Año Anterior" fill={colors.revenueAnterior} radius={[4, 4, 0, 0]} />
-                </>
-              ) : (
-                <>
-                  <Bar dataKey="revenue" name="Ingresos" fill={colors.revenue} radius={[4, 4, 0, 0]} />
-                  {data[0]?.bookings !== undefined && (
-                    <Bar dataKey="bookings" name="Reservas" fill={colors.bookings} radius={[4, 4, 0, 0]} />
-                  )}
-                </>
-              )}
+              {yearKeys.map((yearKey, index) => (
+                <Bar 
+                  key={yearKey}
+                  dataKey={yearKey} 
+                  name={yearLabels[yearKey] || yearKey} 
+                  fill={CHART_COLORS[index % CHART_COLORS.length]} 
+                  radius={[4, 4, 0, 0]}
+                />
+              ))}
             </RechartsBarChart>
           </ResponsiveContainer>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardLoadingState } from '@/components/dashboard/DashboardLoadingState';
 import { DashboardErrorState } from '@/components/dashboard/DashboardErrorState';
@@ -14,19 +14,16 @@ import {
 
 // Define properties for the dashboard
 interface DashboardBaseProps {
-  role: 'admin' | 'user';
-  title: string;
-  description: string;
+  role?: 'admin' | 'user';
+  title?: string;
+  description?: string;
   showAdvancedMetrics?: boolean;
   compareMode?: boolean;
-  compareData?: any; // Datos de comparación
+  primaryMonthlyData?: any[];
+  primaryYearLabel?: string;
+  comparisonYearsMonthlyData?: any[];
+  children?: ReactNode;
 }
-
-// Format currency values
-const formatter = new Intl.NumberFormat('es-ES', {
-  style: 'currency',
-  currency: 'EUR',
-});
 
 export const DashboardBase: React.FC<DashboardBaseProps> = ({ 
   role, 
@@ -34,7 +31,10 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
   description,
   showAdvancedMetrics = false,
   compareMode = false,
-  compareData = null
+  primaryMonthlyData,
+  primaryYearLabel,
+  comparisonYearsMonthlyData,
+  children
 }) => {
   const { 
     loading, 
@@ -103,11 +103,69 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
     occupancyRate,
     revPAR,
     adr,
-    monthlyData,
+    monthlyData, // Datos del año "actual" o único año
   } = displayMetrics;
+
+  // Preparar datos específicamente para RevenueChart con posible comparación multi-anual
+  let processedMonthlyRevenueData: any[] = [];
+  let revenueYearKeys: string[] = [];
+  let revenueYearLabels: Record<string, string> = {};
+
+  // Utilizar monthlyData de displayMetrics como base si primaryMonthlyData no está disponible en modo comparación
+  const baseMonthlyData = (compareMode && primaryMonthlyData) ? primaryMonthlyData : displayMetrics.monthlyData;
+
+  if (compareMode && primaryMonthlyData && comparisonYearsMonthlyData && comparisonYearsMonthlyData.length > 0) {
+    // Modo comparación multianual
+    const primaryYearKey = `revenue${primaryYearLabel || 'Current'}`;
+    revenueYearKeys.push(primaryYearKey);
+    revenueYearLabels[primaryYearKey] = primaryYearLabel || 'Año Actual';
+
+    comparisonYearsMonthlyData.forEach(compYearData => {
+      if (compYearData && compYearData.year && compYearData.monthlyData) {
+        const compYearKey = `revenue${compYearData.year}`;
+        revenueYearKeys.push(compYearKey);
+        revenueYearLabels[compYearKey] = compYearData.year.toString();
+      }
+    });
+
+    processedMonthlyRevenueData = baseMonthlyData.map((currentMonth: any) => {
+      const monthData: any = { name: currentMonth.name };
+      monthData[primaryYearKey] = currentMonth.revenue;
+
+      comparisonYearsMonthlyData.forEach(compYearData => {
+        if (compYearData && compYearData.year && compYearData.monthlyData) {
+          const compYearKey = `revenue${compYearData.year}`;
+          const comparisonMonth = compYearData.monthlyData.find((pm: any) => pm.name === currentMonth.name);
+          monthData[compYearKey] = comparisonMonth ? comparisonMonth.revenue : 0;
+        }
+      });
+      return monthData;
+    });
+
+  } else {
+    // Modo normal (un solo año) o datos de comparación incompletos
+    const singleYearKey = 'revenue';
+    revenueYearKeys = [singleYearKey];
+    revenueYearLabels = { [singleYearKey]: primaryYearLabel || 'Ingresos' }; 
+    
+    processedMonthlyRevenueData = baseMonthlyData.map((currentMonth: any) => ({
+      name: currentMonth.name,
+      [singleYearKey]: currentMonth.revenue,
+    }));
+  }
   
   // Calculate profitability percentage
   const profitability = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+  // Preparar datos de comparación para BasicMetrics y AdvancedMetrics
+  // Usaremos el primer año de comparisonYearsMonthlyData si está disponible
+  let compareDataForMetrics = null;
+  if (compareMode && comparisonYearsMonthlyData && comparisonYearsMonthlyData.length > 0) {
+    // Asumimos que el primer elemento de comparisonYearsMonthlyData contiene las métricas agregadas del año de comparación
+    // (ej. revenue, profit, averageNightlyRate, etc.) que esperan BasicMetrics y AdvancedMetrics.
+    // Esta estructura es la que se define en DashboardPage.tsx para cada elemento de comparisonData.comparisonData
+    compareDataForMetrics = comparisonYearsMonthlyData[0];
+  }
   
   return (
     <>
@@ -125,7 +183,7 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
           totalCleaningFees={totalCleaningFees}
           formatter={formatter}
           compareMode={compareMode}
-          compareData={compareData}
+          compareData={compareDataForMetrics} // Usar los datos de comparación preparados
         />
       ) : (
         <BasicMetricsSkeleton />
@@ -141,7 +199,7 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
             profitability={profitability}
             formatter={formatter}
             compareMode={compareMode}
-            compareData={compareData}
+            compareData={compareDataForMetrics} // Usar los datos de comparación preparados
           />
         ) : (
           <AdvancedMetricsSkeleton />
@@ -151,10 +209,12 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
       {/* Charts */}
       {(chartsLoaded || !loading) ? (
         <DashboardCharts 
-          monthlyRevenueData={monthlyData}
-          occupancyData={monthlyData}
-          compareMode={compareMode}
-          compareData={compareData}
+          monthlyRevenueData={processedMonthlyRevenueData} // Datos procesados para RevenueChart
+          occupancyData={monthlyData} // Datos originales para OccupancyChart
+          yearKeys={revenueYearKeys}    // Nuevas props para RevenueChart
+          yearLabels={revenueYearLabels}  // Nuevas props para RevenueChart
+          compareMode={compareMode} // Se mantiene para OccupancyChart
+          compareData={compareDataForMetrics}   // Usar los datos de comparación preparados para OccupancyChart
         />
       ) : (
         <DashboardChartsSkeleton />
@@ -167,6 +227,14 @@ export const DashboardBase: React.FC<DashboardBaseProps> = ({
           sources={displayBookingSources}
         />
       )}
+      
+      {children}
     </>
   );
 };
+
+// Format currency values
+const formatter = new Intl.NumberFormat('es-ES', {
+  style: 'currency',
+  currency: 'EUR',
+});
