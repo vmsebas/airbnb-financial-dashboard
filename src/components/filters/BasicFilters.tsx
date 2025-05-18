@@ -27,11 +27,12 @@ const monthOptions = [
   { value: 'Diciembre', label: 'Diciembre' },
 ];
 
-const bookingSourceOptions = [
+const bookingChannelOptions = [
   { value: 'Airbnb', label: 'Airbnb' },
   { value: 'Booking.com', label: 'Booking.com' },
   { value: 'Vrbo', label: 'Vrbo' },
   { value: 'Directo', label: 'Directo' },
+  { value: 'Facebook', label: 'Facebook' },
 ];
 
 const paymentStatusOptions = [
@@ -49,43 +50,67 @@ export const BasicFilters: React.FC<BasicFiltersProps> = ({
   const { filters, setFilters } = useFilters();
 
   const handleMonthChange = (value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      month: value === 'all' ? null : value
-    }));
+    console.log(`📅 [BasicFilters] Cambiando mes a: ${value}`);
+    setFilters(prev => {
+      const newMonth = value === 'all' ? null : value;
+      console.log(`🔄 [BasicFilters] Nuevo estado de filtros (mes):`, { ...prev, month: newMonth });
+      return {
+        ...prev,
+        month: newMonth
+      };
+    });
   };
 
   const handleApartmentsChange = (selectedApartments: string[]) => {
-    setFilters(prev => ({
-      ...prev,
-      apartment: selectedApartments.length > 0 ? selectedApartments : null
-    }));
+    console.log(`🏠 [BasicFilters] Cambiando apartamentos seleccionados:`, selectedApartments);
+    setFilters(prev => {
+      const newApartments = selectedApartments.length > 0 ? selectedApartments : null;
+      console.log(`🔄 [BasicFilters] Nuevo estado de filtros (apartamentos):`, { ...prev, apartment: newApartments });
+      return {
+        ...prev,
+        apartment: newApartments
+      };
+    });
   };
 
-  const handleBookingSourceChange = (value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      bookingSource: value === 'all' ? null : value
-    }));
+  const handleBookingChannelChange = (value: string) => {
+    console.log(`🌐 [BasicFilters] Cambiando canal de reserva a: ${value}`);
+    setFilters(prev => {
+      const newBookingChannel = value === 'all' ? null : value;
+      console.log(`🔄 [BasicFilters] Nuevo estado de filtros (canal de reserva):`, { ...prev, bookingChannel: newBookingChannel });
+      return {
+        ...prev,
+        bookingChannel: newBookingChannel
+      };
+    });
   };
 
   const handlePaymentStatusChange = (value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      paymentStatus: value === 'all' 
+    console.log(`💳 [BasicFilters] Cambiando estado de pago a: ${value}`);
+    setFilters(prev => {
+      const newPaymentStatus = value === 'all' 
         ? null 
         : value === 'true' 
           ? true 
-          : false
-    }));
+          : false;
+      console.log(`🔄 [BasicFilters] Nuevo estado de filtros (estado de pago):`, { ...prev, paymentStatus: newPaymentStatus });
+      return {
+        ...prev,
+        paymentStatus: newPaymentStatus
+      };
+    });
   };
 
   const handleYearChange = (value: string) => {
     const year = parseInt(value);
-    setFilters(prev => ({
-      ...prev,
-      year
-    }));
+    console.log(`📅 [BasicFilters] Cambiando año a: ${year}`);
+    setFilters(prev => {
+      console.log(`🔄 [BasicFilters] Nuevo estado de filtros (año):`, { ...prev, year });
+      return {
+        ...prev,
+        year
+      };
+    });
   };
 
   const apartmentOptions = apartments.map(apartment => ({
@@ -155,15 +180,15 @@ export const BasicFilters: React.FC<BasicFiltersProps> = ({
       <div className="w-full md:w-auto">
         <Label htmlFor="source-filter">Portal de Reserva</Label>
         <Select
-          value={filters.bookingSource || 'all'}
-          onValueChange={handleBookingSourceChange}
+          value={filters.bookingChannel || 'all'}
+          onValueChange={handleBookingChannelChange}
         >
           <SelectTrigger id="source-filter" className="w-full md:w-[180px]">
             <SelectValue placeholder="Todos los portales" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem key="all-sources" value="all">Todos los portales</SelectItem>
-            {bookingSourceOptions.map((source) => (
+            {bookingChannelOptions.map((source) => (
               <SelectItem key={source.value} value={source.value}>
                 {source.label}
               </SelectItem>

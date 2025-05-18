@@ -5,7 +5,7 @@ export interface FilterState {
   year: number;
   month: string | null; // null o 'all' significa "todos los meses"
   apartment: string[] | null; // Cambiamos a array para permitir selección múltiple
-  bookingSource: string | null;
+  bookingChannel: string | null; // Portal de reserva (Airbnb, Booking.com, etc.)
   paymentStatus: boolean | string | null; // true = pagado, false = no pagado, 'all' o null = todos
   dateRange: {
     from: Date | null;
@@ -36,7 +36,7 @@ const defaultFilters: FilterState = {
   year: getCurrentYear(),
   month: null,
   apartment: null, // null significa "todos los apartamentos"
-  bookingSource: null,
+  bookingChannel: null, // Portal de reserva (Airbnb, Booking.com, etc.)
   paymentStatus: null,
   dateRange: {
     from: null,
@@ -113,59 +113,86 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, []);
 
   const applyFilters = () => {
-    console.log('Aplicando filtros:', filters);
+    console.log('🔄 [FilterContext] Aplicando filtros:', JSON.stringify(filters, null, 2));
+    console.log('📱 [FilterContext] Contexto actual:', { viewContext, currentApartment });
+    
     setAppliedFilters(prev => {
+      let newFilters = { ...filters };
+      
       // En vista de detalle, siempre mantenemos el apartamento actual
       if (viewContext === 'detail' && currentApartment) {
-        return { ...filters, apartment: [currentApartment] }; // Cambiamos a array para permitir selección múltiple
+        newFilters = { ...filters, apartment: [currentApartment] };
+        console.log('🏠 [FilterContext] Aplicando filtro de apartamento para vista detalle:', currentApartment);
       }
-      return { ...filters };
+      
+      console.log('✅ [FilterContext] Filtros aplicados:', JSON.stringify(newFilters, null, 2));
+      return newFilters;
     });
   };
 
   const resetFilters = () => {
-    console.log('Restableciendo filtros a valores predeterminados');
+    console.log('🔄 [FilterContext] Restableciendo filtros a valores predeterminados');
+    console.log('📱 [FilterContext] Contexto actual:', { viewContext, currentApartment });
+    
     // En vista de detalle, preservar el apartamento actual
     if (viewContext === 'detail' && currentApartment) {
-      const resetFilters = { ...defaultFilters, apartment: [currentApartment] }; // Cambiamos a array para permitir selección múltiple
+      const resetFilters = { ...defaultFilters, apartment: [currentApartment] };
+      console.log('🏠 [FilterContext] Restableciendo filtros para vista detalle con apartamento:', currentApartment);
+      console.log('🔄 [FilterContext] Filtros restablecidos:', JSON.stringify(resetFilters, null, 2));
+      
       setFilters(resetFilters);
       setAppliedFilters(resetFilters);
     } else {
+      console.log('🏠 [FilterContext] Restableciendo todos los filtros a valores predeterminados');
+      console.log('🔄 [FilterContext] Filtros restablecidos:', JSON.stringify(defaultFilters, null, 2));
+      
       setFilters(defaultFilters);
       setAppliedFilters(defaultFilters);
     }
   };
 
   const toggleCompareMode = () => {
+    console.log('🔄 [FilterContext] Cambiando modo comparación');
+    
     setFilters(prev => {
       const newCompareMode = !prev.compareMode;
+      console.log(`🔄 [FilterContext] Nuevo estado del modo comparación: ${newCompareMode}`);
       
       // Si estamos activando el modo comparación y no hay años seleccionados,
       // añadimos automáticamente el año anterior al actual
       if (newCompareMode && (!prev.compareYears || prev.compareYears.length === 0)) {
-        return {
+        const newCompareYear = prev.year - 1;
+        console.log(`📅 [FilterContext] Añadiendo año de comparación: ${newCompareYear}`);
+        
+        const newState = {
           ...prev,
           compareMode: newCompareMode,
-          compareYear: prev.year - 1, // Para compatibilidad con código antiguo
-          compareYears: [prev.year - 1] // Añadir el año anterior al array
+          compareYear: newCompareYear, // Para compatibilidad con código antiguo
+          compareYears: [newCompareYear] // Añadir el año anterior al array
         };
+        
+        console.log('🔄 [FilterContext] Nuevo estado de filtros con comparación:', JSON.stringify(newState, null, 2));
+        return newState;
       }
       
-      return {
+      const newState = {
         ...prev,
         compareMode: newCompareMode,
         // Mantenemos los años de comparación si ya existen
       };
+      
+      console.log('🔄 [FilterContext] Nuevo estado de filtros:', JSON.stringify(newState, null, 2));
+      return newState;
     });
   };
 
   return (
-    <FilterContext.Provider value={{ 
-      filters, 
-      appliedFilters, 
-      setFilters, 
-      applyFilters, 
-      resetFilters, 
+    <FilterContext.Provider value={{
+      filters,
+      appliedFilters,
+      setFilters,
+      applyFilters,
+      resetFilters,
       toggleCompareMode,
       isDetailView,
       viewContext,

@@ -51,7 +51,7 @@ export const GlobalFilters: React.FC = () => {
     if (viewContext === 'detail' && currentApartment) {
       return !!(
         appliedFilters.month || 
-        appliedFilters.bookingSource || 
+        appliedFilters.bookingChannel || 
         appliedFilters.paymentStatus !== null || 
         appliedFilters.dateRange.from || 
         appliedFilters.dateRange.to ||
@@ -62,7 +62,7 @@ export const GlobalFilters: React.FC = () => {
     return !!(
       appliedFilters.month || 
       appliedFilters.apartment || 
-      appliedFilters.bookingSource || 
+      appliedFilters.bookingChannel || 
       appliedFilters.paymentStatus !== null || 
       appliedFilters.dateRange.from || 
       appliedFilters.dateRange.to ||

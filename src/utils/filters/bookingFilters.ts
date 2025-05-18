@@ -27,9 +27,71 @@ export const filterBookings = (bookings: Booking[], filters: FilterState): Booki
       return false;
     }
     
+    // CAMBIO DE ORDEN: Primero filtrar por apartamento
+    // Filtrado por apartamento(s) (ahora puede ser un array de apartamentos)
+    if (filters.apartment && filters.apartment.length > 0 && booking.apartment !== undefined) {
+      // Si filters.apartment es un array, verificamos si el apartamento de la reserva está en el array
+      if (!filters.apartment.includes(booking.apartment)) {
+        // console.log(`Filtro apartamento: excluye booking ${booking.id}, apartamento ${booking.apartment} no está en [${filters.apartment.join(', ')}]`);
+        return false;
+      }
+    }
+
+    // Filtrado por portal de reserva (bookingChannel)
+    if (filters.bookingChannel && filters.bookingChannel !== 'all' && booking.bookingPortal !== undefined) {
+      console.log(`[filterBookings] Portal Filter Active: Filtro='${filters.bookingChannel}', Reserva ID='${booking.id}', Portal Reserva='${booking.bookingPortal}'`);
+      if (booking.bookingPortal !== filters.bookingChannel) {
+        console.log(`[filterBookings]   ↳ Portal NO Coincide: '${booking.bookingPortal}' !== '${filters.bookingChannel}'. Excluyendo reserva.`);
+        return false;
+      } else {
+        console.log(`[filterBookings]   ↳ Portal SÍ Coincide: '${booking.bookingPortal}' === '${filters.bookingChannel}'. Incluyendo reserva.`);
+      }
+    }
+    
+    // Filtrado por mes
+    if (filters.month && filters.month !== 'all') {
+      console.log(`Revisando filtro de mes: reserva=${booking.id}, mes=${booking.month || 'sin mes'}, filtro=${filters.month}`);
+      
+      // Si no tiene mes asignado pero tiene fecha de check-in, extraer el mes de ahí
+      if (!booking.month && booking.checkIn) {
+        try {
+          const checkInDate = new Date(booking.checkIn);
+          if (!isNaN(checkInDate.getTime())) {
+            const monthNames = [
+              'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+              'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+            ];
+            const extractedMonth = monthNames[checkInDate.getMonth()];
+            console.log(`  🔄 Extrayendo mes de checkIn: ${extractedMonth}`);
+            
+            // Comparar el mes extraído con el filtro
+            if (extractedMonth !== filters.month) {
+              console.log(`  → No coincide mes extraído: ${extractedMonth} ≠ ${filters.month}`);
+              return false;
+            } else {
+              console.log(`  ✓ Coincide mes extraído: ${extractedMonth} = ${filters.month}`);
+              return true;
+            }
+          }
+        } catch (e) {
+          console.error('Error al procesar fecha de check-in para filtrado por mes:', e);
+        }
+      }
+      
+      // Comparación exacta de cadenas para el mes
+      if (booking.month !== filters.month) {
+        console.log(`  → No coincide mes: ${booking.month || 'sin mes'} ≠ ${filters.month}`);
+        return false;
+      } else {
+        console.log(`  ✓ Coincide mes: ${booking.month} = ${filters.month}`);
+      }
+    }
+    
     // Filtrado por año (solo si no estamos en modo comparación)
     if (!filters.compareMode && filters.year && booking.year !== undefined && booking.year !== null) {
-      if (booking.year !== filters.year) {
+      console.log(`Filtrando reserva ${booking.id} - año: ${booking.year}, filtro: ${filters.year}`);
+      if (Number(booking.year) !== Number(filters.year)) {
+        console.log(`  → No coincide año: ${booking.year} ≠ ${filters.year}`);
         return false;
       }
     }
@@ -44,30 +106,7 @@ export const filterBookings = (bookings: Booking[], filters: FilterState): Booki
       }
     }
     
-    // Filtrado por mes
-    if (filters.month && filters.month !== 'all' && booking.month !== undefined) {
-      if (booking.month !== filters.month) {
-        // console.log(`Filtro mes: excluye booking ${booking.id}, mes ${booking.month} != ${filters.month}`);
-        return false;
-      }
-    }
-    
-    // Filtrado por apartamento(s) (ahora puede ser un array de apartamentos)
-    if (filters.apartment && filters.apartment.length > 0 && booking.apartment !== undefined) {
-      // Si filters.apartment es un array, verificamos si el apartamento de la reserva está en el array
-      if (!filters.apartment.includes(booking.apartment)) {
-        // console.log(`Filtro apartamento: excluye booking ${booking.id}, apartamento ${booking.apartment} no está en [${filters.apartment.join(', ')}]`);
-        return false;
-      }
-    }
-    
-    // Filtrado por fuente de reserva
-    if (filters.bookingSource && filters.bookingSource !== 'all' && booking.bookingPortal !== undefined) {
-      if (booking.bookingPortal !== filters.bookingSource) {
-        // console.log(`Filtro fuente: excluye booking ${booking.id}, portal ${booking.bookingPortal} != ${filters.bookingSource}`);
-        return false;
-      }
-    }
+    // La lógica de filtrado por portal de reserva ya se aplicó anteriormente
     
     // Filtrado por estado de pago
     if (filters.paymentStatus !== null && filters.paymentStatus !== 'all' && booking.paid !== undefined) {
@@ -122,6 +161,20 @@ export const filterBookings = (bookings: Booking[], filters: FilterState): Booki
   if (filteredBookings.length > 0 && filteredBookings.length <= 5) {
     console.log('[filterBookings] Reservas filtradas:', 
       filteredBookings.map(b => ({ id: b.id, apartment: b.apartment, checkIn: b.checkIn, checkOut: b.checkOut })));
+  }
+  
+  // En caso de que no se encuentren reservas, añadir información de depuración
+  if (filteredBookings.length === 0 && bookings.length > 0) {
+    console.warn('[filterBookings] ⚠️ ALERTA: Todas las reservas fueron filtradas');
+    if (filters.month) {
+      console.log('[filterBookings] Distribución por mes de reservas originales:');
+      const mesesDisponibles = {};
+      bookings.forEach(b => {
+        if (!mesesDisponibles[b.month]) mesesDisponibles[b.month] = 0;
+        mesesDisponibles[b.month]++;
+      });
+      console.log(mesesDisponibles);
+    }
   }
   
   return filteredBookings;
