@@ -2,8 +2,10 @@ import { Booking } from '../types';
 
 // Listas de datos ficticios para generar reservas
 const apartments = [
-  'Trindade 1', 'Trindade 2', 'Trindade 4', 'Trindade 5', 
-  'White Cube', 'Blue Tile', 'I Love Lisboa'
+  'Trindade 1 - Yellow Tiles',
+  'Trindade 2 - Blue Tiles',
+  'Trindade 4 - White Tiles',
+  'I Love Lisboa'
 ];
 
 const portals = ['Airbnb', 'Booking.com', 'VRBO', 'Directo', 'Expedia'];

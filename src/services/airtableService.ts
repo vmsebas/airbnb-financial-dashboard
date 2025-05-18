@@ -1,30 +1,50 @@
 import Airtable from 'airtable';
-import { Booking } from '../types';
+import { Booking, InventoryItem } from '../types';
 import { AIRTABLE_CONFIG } from '../config/airtable';
 import { generateMockBookings } from '../utils/mockData';
 import cacheService from './cacheService';
 
-// Inicializar Airtable
-const base = new Airtable({ apiKey: AIRTABLE_CONFIG.API_KEY }).base(AIRTABLE_CONFIG.BASE_ID);
-
-// Lista de apartamentos permitidos para usuarios normales
-const USER_ALLOWED_APARTMENTS = ['Trindade 1', 'Trindade 2', 'Trindade 4'];
-
-// Flag para determinar si debemos usar datos de muestra
+// Flag para determinar si debemos usar datos de muestra - SIEMPRE false para garantizar que se intenten obtener datos reales
 let usesMockData = false;
 
-// Función para comprobar si un apartamento está permitido para usuarios normales
-// Exportamos la función para poder usarla en dataService.ts
-export const isApartmentAllowedForUser = (apartmentName: string): boolean => {
-  // Usar una comparación exacta en lugar de includes() para evitar falsos positivos
-  // Ejemplo: "No Trindade 1" sería detectado incorrectamente con includes()
-  return USER_ALLOWED_APARTMENTS.some(allowed => 
-    apartmentName === allowed || 
-    // También permitimos si el nombre del apartamento comienza con el nombre permitido seguido de un guion o espacio
-    apartmentName.startsWith(allowed + ' ') || 
-    apartmentName.startsWith(allowed + '-')
-  );
+// Inicializar Airtable con manejo de errores
+let base: any;
+let inventoryBase: any;
+
+try {
+  // Inicializar Airtable para la base principal (reservas y apartamentos)
+  base = new Airtable({ apiKey: AIRTABLE_CONFIG.API_KEY }).base(AIRTABLE_CONFIG.BASE_ID);
+  
+  // Inicializar Airtable para la base de inventario
+  inventoryBase = new Airtable({ apiKey: AIRTABLE_CONFIG.API_KEY }).base(AIRTABLE_CONFIG.INVENTORY_BASE_ID);
+  
+  console.log('[airtableService] Conexión con Airtable inicializada correctamente');
+} catch (error) {
+  console.error('[airtableService] Error al inicializar la conexión con Airtable:', error);
+  // Ya está establecido como true por defecto
+}
+
+// Mapeo de nombres de apartamentos entre la app y Airtable
+// Asumimos que la app usa "Apartamento X" y Airtable usa "Trindade X"
+const APP_TO_AIRTABLE_APT_MAP: { [key: string]: string } = {
+  // Nombres de la UI mapeados a nombres supuestos de Airtable
+  "Trindade 1 - Yellow Tiles": "Trindade 1 - Yellow Tiles", 
+  "I Love Lisboa": "I Love Lisboa", // SUPOSICIÓN: verificar nombre en Airtable
+  "Trindade 4 - White Tiles": "Trindade 4 - White Tiles",
+  "Trindade 2 - Blue Tiles": "Trindade 2 - Blue Tiles",
+  'Apartamento 3': 'Trindade 3', // Mantenido de la versión anterior
 };
+
+const AIRTABLE_TO_APP_APT_MAP: { [key: string]: string } = {
+  // Nombres de Airtable mapeados a nombres de la UI
+  "Trindade 1 - Yellow Tiles": "Trindade 1 - Yellow Tiles",
+  "I Love Lisboa": "I Love Lisboa", // SUPOSICIÓN: verificar nombre en Airtable
+  "Trindade 4 - White Tiles": "Trindade 4 - White Tiles",
+  "Trindade 2 - Blue Tiles": "Trindade 2 - Blue Tiles",
+  'Trindade 3': 'Apartamento 3', // Mantenido de la versión anterior
+};
+
+// Ya declarado al inicio del archivo
 
 // Función para mapear los registros de Airtable al formato de nuestra aplicación
 const mapAirtableRecordToBooking = (record: any): Booking => {
@@ -40,10 +60,39 @@ const mapAirtableRecordToBooking = (record: any): Booking => {
     return Boolean(value);
   };
 
+  // Extraer la fecha de check-in para procesamiento
+  const checkInDate = record.get('Llegada') || '';
+  let year = parseNumber(record.get('Año'));
+  let month = record.get('Mes') || '';
+  
+  // Si no hay año o mes explícito pero hay fecha de check-in, extraer de ahí
+  if (checkInDate && (!year || !month)) {
+    try {
+      const date = new Date(checkInDate);
+      if (!isNaN(date.getTime())) {
+        if (!year) year = date.getFullYear();
+        
+        if (!month) {
+          // Meses en español
+          const monthNames = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+          ];
+          month = monthNames[date.getMonth()];
+        }
+      }
+    } catch (e) {
+      console.error('Error al analizar fecha de check-in:', checkInDate, e);
+    }
+  }
+  
+  // Si aún no tenemos año, usar el actual
+  if (!year) year = new Date().getFullYear();
+  
   return {
     id: record.id || '',
     createdAt: record.get('Creado') || '',
-    checkIn: record.get('Llegada') || '',
+    checkIn: checkInDate,
     checkOut: record.get('Salida') || '',
     position: record.get('Posición') || '',
     apartment: record.get('Apartamento') || '',
@@ -70,8 +119,8 @@ const mapAirtableRecordToBooking = (record: any): Booking => {
     cityTax: parseNumber(record.get('City tax')),
     paid: parseBoolean(record.get('Pagado')),
     notes: record.get('Notas') || '',
-    year: parseNumber(record.get('Año')) || new Date().getFullYear(),
-    month: record.get('Mes') || '',
+    year: year,
+    month: month,
     profit: parseNumber(record.get('Beneficio')) || 0,
     
     // Mapeo de columnas adicionales que podrían existir
@@ -105,9 +154,9 @@ const mapAirtableRecordToBooking = (record: any): Booking => {
   };
 };
 
-// Obtener todas las reservas según el rol del usuario con soporte para caché
-export const fetchBookings = async (role: string | null = 'admin', useCache: boolean = true): Promise<Booking[]> => {
-  const cacheKey = `bookings_${role}`;
+// Obtener todas las reservas
+export const fetchBookings = async (useCache: boolean = true): Promise<Booking[]> => {
+  const cacheKey = `bookings`;
   
   // Verificar si hay datos en caché y si debemos usarlos
   if (useCache && cacheService.has(cacheKey)) {
@@ -117,46 +166,27 @@ export const fetchBookings = async (role: string | null = 'admin', useCache: boo
   try {
     // Si ya estamos usando datos de muestra, continuar con ellos
     if (usesMockData) {
-      console.log(`[fetchBookings] Usando datos de muestra para rol: ${role}`);
+      console.log(`[fetchBookings] Usando datos de muestra`);
       const mockBookings = generateMockBookings(100); // Generar 100 reservas de muestra
-      
-      const result = role === 'admin' 
-        ? mockBookings 
-        : mockBookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
       
       // Guardar en caché
       if (useCache) {
-        cacheService.set(cacheKey, result, 300); // 5 minutos de caché
+        cacheService.set(cacheKey, mockBookings, 300); // 5 minutos de caché
       }
       
-      return result;
+      return mockBookings;
     }
     
-    console.log(`[fetchBookings] Solicitando reservas de Airtable con rol: ${role}`);
+    console.log(`[fetchBookings] Solicitando reservas de Airtable`);
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select().all();
     const bookings = records.map(mapAirtableRecordToBooking);
     
-    let result: Booking[];
-    
-    // Si el usuario es admin, devolvemos todas las reservas
-    if (role === 'admin') {
-      console.log(`[fetchBookings] Rol admin: Devolviendo todas las reservas (${bookings.length})`);
-      result = bookings;
-    } else {
-      // Si el usuario es normal, filtramos las reservas
-      const filteredBookings = bookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
-      console.log(`[fetchBookings] Rol user: Filtrando reservas ${filteredBookings.length} de ${bookings.length}`);
-      console.log('[fetchBookings] Apartamentos permitidos:', USER_ALLOWED_APARTMENTS);
-      console.log('[fetchBookings] Primeros 5 apartamentos filtrados:', filteredBookings.slice(0, 5).map(b => b.apartment));
-      result = filteredBookings;
-    }
-    
     // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result, 300); // 5 minutos de caché
+      cacheService.set(cacheKey, bookings, 300); // 5 minutos de caché
     }
     
-    return result;
+    return bookings;
   } catch (error) {
     console.error('[fetchBookings] Error al obtener las reservas de Airtable:', error);
     
@@ -173,23 +203,18 @@ export const fetchBookings = async (role: string | null = 'admin', useCache: boo
     // Generar datos de muestra
     const mockBookings = generateMockBookings(100); // Generar 100 reservas de muestra
     
-    // Filtrar según el rol
-    const result = role === 'admin' 
-      ? mockBookings 
-      : mockBookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
-    
     // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result);
+      cacheService.set(cacheKey, mockBookings);
     }
     
-    return result;
+    return mockBookings;
   }
 };
 
-// Obtener reservas por apartamento según el rol con soporte para caché
-export const fetchBookingsByApartment = async (apartmentName: string, role: string | null = 'admin', useCache: boolean = true): Promise<Booking[]> => {
-  const cacheKey = `bookings_apartment_${apartmentName}_${role}`;
+// Obtener reservas por apartamento
+export const fetchBookingsByApartment = async (apartmentName: string, useCache: boolean = true): Promise<Booking[]> => {
+  const cacheKey = `bookings_apartment_${apartmentName}`;
   
   // Verificar si hay datos en caché y si debemos usarlos
   if (useCache && cacheService.has(cacheKey)) {
@@ -199,31 +224,21 @@ export const fetchBookingsByApartment = async (apartmentName: string, role: stri
   try {
     // Si ya estamos usando datos de muestra, continuar con ellos
     if (usesMockData) {
-      console.log(`[fetchBookingsByApartment] Usando datos de muestra para ${apartmentName} con rol: ${role}`);
+      console.log(`[fetchBookingsByApartment] Usando datos de muestra para ${apartmentName}`);
       const mockBookings = generateMockBookings(30, apartmentName); // Generar 30 reservas de muestra para este apartamento
-      
-      const result = (role === 'admin' || isApartmentAllowedForUser(apartmentName))
-        ? mockBookings
-        : [];
       
       // Guardar en caché
       if (useCache) {
-        cacheService.set(cacheKey, result);
+        cacheService.set(cacheKey, mockBookings);
       }
       
-      return result;
+      return mockBookings;
     }
     
-    // Para usuarios normales, verificar si tienen acceso a este apartamento
-    if (role === 'user' && !isApartmentAllowedForUser(apartmentName)) {
-      console.log(`[fetchBookingsByApartment] Usuario no autorizado para acceder a: ${apartmentName}`);
-      return [];
-    }
-    
-    console.log(`[fetchBookingsByApartment] Solicitando reservas para ${apartmentName} con rol ${role}`);
+    console.log(`[fetchBookingsByApartment] Solicitando reservas para ${apartmentName}`);
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE)
       .select({
-        filterByFormula: `{Apartamento} = '${apartmentName}'`
+        filterByFormula: `{Apartamento} = '${APP_TO_AIRTABLE_APT_MAP[apartmentName]}'`
       })
       .all();
     const mappedBookings = records.map(mapAirtableRecordToBooking);
@@ -251,23 +266,18 @@ export const fetchBookingsByApartment = async (apartmentName: string, role: stri
     // Generar datos de muestra
     const mockBookings = generateMockBookings(30, apartmentName); // Generar 30 reservas de muestra para este apartamento
     
-    // Filtrar según el rol
-    const result = (role === 'admin' || isApartmentAllowedForUser(apartmentName))
-      ? mockBookings
-      : [];
-    
     // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result);
+      cacheService.set(cacheKey, mockBookings);
     }
     
-    return result;
+    return mockBookings;
   }
 };
 
-// Obtener lista de apartamentos únicos según el rol del usuario con soporte para caché
-export const fetchUniqueApartments = async (role: string | null = 'admin', useCache: boolean = true): Promise<string[]> => {
-  const cacheKey = `apartments_${role}`;
+// Obtener lista de apartamentos únicos
+export const fetchUniqueApartments = async (useCache: boolean = true): Promise<string[]> => {
+  const cacheKey = `apartments`;
   
   // Verificar si hay datos en caché y si debemos usarlos
   if (useCache && cacheService.has(cacheKey)) {
@@ -277,25 +287,21 @@ export const fetchUniqueApartments = async (role: string | null = 'admin', useCa
   try {
     // Si ya estamos usando datos de muestra, continuar con ellos
     if (usesMockData) {
-      console.log(`[fetchUniqueApartments] Usando datos de muestra para rol: ${role}`);
+      console.log(`[fetchUniqueApartments] Usando datos de muestra`);
       const mockApartments = [
         'Trindade 1', 'Trindade 2', 'Trindade 4', 'Trindade 5', 
         'White Cube', 'Blue Tile', 'I Love Lisboa'
       ];
       
-      const result = role === 'admin'
-        ? mockApartments
-        : mockApartments.filter(apt => isApartmentAllowedForUser(apt));
-      
       // Guardar en caché
       if (useCache) {
-        cacheService.set(cacheKey, result);
+        cacheService.set(cacheKey, mockApartments);
       }
       
-      return result;
+      return mockApartments;
     }
     
-    console.log(`[fetchUniqueApartments] Solicitando apartamentos con rol: ${role}`);
+    console.log(`[fetchUniqueApartments] Solicitando apartamentos`);
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select({
       fields: ['Apartamento']
     }).all();
@@ -308,27 +314,14 @@ export const fetchUniqueApartments = async (role: string | null = 'admin', useCa
       }
     });
     
-    let apartmentArray = Array.from(apartments);
-    let result: string[];
-    
-    // Filtrar los apartamentos según el rol
-    if (role === 'user') {
-      const filteredApartments = apartmentArray.filter(apt => isApartmentAllowedForUser(apt));
-      console.log(`[fetchUniqueApartments] Rol user: Filtrando apartamentos ${filteredApartments.length} de ${apartmentArray.length}`);
-      console.log('[fetchUniqueApartments] Apartamentos permitidos:', USER_ALLOWED_APARTMENTS);
-      console.log('[fetchUniqueApartments] Apartamentos filtrados:', filteredApartments);
-      result = filteredApartments;
-    } else {
-      console.log(`[fetchUniqueApartments] Rol admin: Devolviendo todos los apartamentos (${apartmentArray.length})`);
-      result = apartmentArray;
-    }
+    const apartmentArray = Array.from(apartments);
     
     // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result);
+      cacheService.set(cacheKey, apartmentArray);
     }
     
-    return result;
+    return apartmentArray;
   } catch (error) {
     console.error('[fetchUniqueApartments] Error al obtener la lista de apartamentos:', error);
     
@@ -348,55 +341,244 @@ export const fetchUniqueApartments = async (role: string | null = 'admin', useCa
       'White Cube', 'Blue Tile', 'I Love Lisboa'
     ];
     
-    // Filtrar según el rol
-    const result = role === 'admin'
-      ? mockApartments
-      : mockApartments.filter(apt => isApartmentAllowedForUser(apt));
-    
     // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result);
+      cacheService.set(cacheKey, mockApartments);
     }
     
-    return result;
+    return mockApartments;
   }
 };
 
-// Función para registrar un log detallado de las columnas encontradas
-export const analyzeTableColumns = async (): Promise<{ columnNames: string[], sampleValues: Record<string, any> }> => {
+// FUNCIONES PARA GESTIÓN DE INVENTARIO
+
+// Función para mapear los registros de Airtable al formato de InventoryItem
+const mapAirtableRecordToInventoryItem = (record: any): InventoryItem => {
+  // Función auxiliar para manejar valores numéricos
+  const parseNumber = (value: any): number | undefined => {
+    return value !== undefined && value !== null ? Number(value) : undefined;
+  };
+
+  return {
+    id: record.id,
+    nombre: record.get('Nombre') || '',
+    apartamento: AIRTABLE_TO_APP_APT_MAP[record.get('Apartamento')] || record.get('Apartamento'), // <-- MODIFICADO
+    categoria: record.get('Categoria') || '',
+    subcategoria: record.get('Subcategoria'),
+    cantidad: parseNumber(record.get('Cantidad')) || 1,
+    estado: record.get('Estado') || 'Buen Estado',
+    fechaAdquisicion: record.get('Fecha Adquisicion') || '',
+    valorEstimado: parseNumber(record.get('Valor Estimado')),
+    proveedor: record.get('Proveedor') || '',
+    numeroSerie: record.get('Numero Serie') || '',
+    ubicacion: record.get('Ubicacion') || '',
+    foto: record.get('Foto'),
+    notas: record.get('Notas') || '',
+    ultimaActualizacion: record.get('Ultima Actualizacion') || new Date().toISOString()
+  };
+};
+
+// Obtener todos los elementos del inventario
+export const fetchInventoryItems = async (filters: {
+  apartamento?: string;
+  categoria?: string;
+  estado?: string;
+  searchTerm?: string;
+} = {}, useCache: boolean = true): Promise<InventoryItem[]> => {
+  const cacheKey = `inventory_${JSON.stringify(filters)}`;
+  const cachedData = cacheService.get<InventoryItem[]>(cacheKey);
+  if (cachedData) {
+    return cachedData;
+  }
+
   try {
-    if (usesMockData) {
-      return { 
-        columnNames: [
-          'Apartamento', 'Huésped', 'Llegada', 'Salida', 'Portal de reserva',
-          'Precio', 'Total', 'Comisión 20%', 'Pagado', 'Estado', 'Año', 'Mes'
-        ],
-        sampleValues: {} 
-      };
+    let filterParts: string[] = [];
+
+    if (filters.searchTerm) {
+      const searchTermLower = filters.searchTerm.toLowerCase();
+      filterParts.push(
+        `OR(
+          SEARCH("${searchTermLower}", LOWER({Nombre})),
+          SEARCH("${searchTermLower}", LOWER({Categoria})),
+          SEARCH("${searchTermLower}", LOWER({Subcategoria})),
+          SEARCH("${searchTermLower}", LOWER({Notas}))
+        )`
+      );
     }
+    if (filters.categoria) filterParts.push(`{Categoria} = "${filters.categoria}"`);
+    if (filters.estado) filterParts.push(`{Estado} = "${filters.estado}"`);
+
+    // Filtro por apartamento específico (si viene de los filtros del UI)
+    if (filters.apartamento) {
+        const airtableAptName = APP_TO_AIRTABLE_APT_MAP[filters.apartamento] || filters.apartamento;
+        filterParts.push(`{Apartamento} = "${airtableAptName}"`);
+    }
+
+    const filterByFormula = filterParts.length > 0 ? `AND(${filterParts.join(', ')})` : '';
+    // console.log(`[fetchInventoryItems] Airtable formula: ${filterByFormula}`);
+
+    const records = await inventoryBase(AIRTABLE_CONFIG.INVENTORY_TABLE)
+      .select({
+        filterByFormula: filterByFormula,
+        sort: [{ field: 'Nombre', direction: 'asc' }], 
+      })
+      .all();
+
+    const items = records.map(mapAirtableRecordToInventoryItem);
+    cacheService.set(cacheKey, items);
+    return items;
+
+  } catch (error) {
+    console.error('[fetchInventoryItems] Error al obtener inventario:', error);
+    throw error; // O maneja el error como prefieras
+  }
+};
+
+// Crear un nuevo elemento de inventario
+export const createInventoryItem = async (
+  itemData: Partial<InventoryItem>,
+): Promise<InventoryItem | null> => {
+  if (!itemData.nombre || !itemData.apartamento || !itemData.categoria) {
+    console.error('[createInventoryItem] Error: Faltan campos obligatorios (nombre, apartamento, categoría).');
+    // Considera enviar un error más específico al frontend aquí
+    return null;
+  }
+
+  try {
+    const fields: Record<string, any> = {};
+    fields['Nombre'] = itemData.nombre;
+    fields['Apartamento'] = APP_TO_AIRTABLE_APT_MAP[itemData.apartamento]; // Mapear a nombre de Airtable
+    fields['Categoria'] = itemData.categoria;
     
-    const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select({ maxRecords: 1 }).all();
-    if (records.length === 0) {
+    // Campos opcionales
+    if (itemData.subcategoria !== undefined) fields['Subcategoria'] = itemData.subcategoria;
+    if (itemData.cantidad !== undefined) fields['Cantidad'] = itemData.cantidad; else fields['Cantidad'] = 1;
+    if (itemData.estado !== undefined) fields['Estado'] = itemData.estado; else fields['Estado'] = 'Buen Estado';
+    if (itemData.fechaAdquisicion) fields['Fecha Adquisicion'] = itemData.fechaAdquisicion; else fields['Fecha Adquisicion'] = new Date().toISOString().split('T')[0];
+    if (itemData.valorEstimado !== undefined) fields['Valor Estimado'] = itemData.valorEstimado; else fields['Valor Estimado'] = 0;
+    if (itemData.proveedor !== undefined) fields['Proveedor'] = itemData.proveedor;
+    if (itemData.numeroSerie !== undefined) fields['Numero Serie'] = itemData.numeroSerie;
+    if (itemData.ubicacion !== undefined) fields['Ubicacion'] = itemData.ubicacion;
+    if (itemData.notas !== undefined) fields['Notas'] = itemData.notas;
+    // 'foto' requeriría manejo especial para subidas de archivos a Airtable
+
+    const createdRecords = await inventoryBase(AIRTABLE_CONFIG.INVENTORY_TABLE).create([{ fields }]);
+    
+    if (!createdRecords || createdRecords.length === 0) {
+        console.error('[createInventoryItem] Error: Airtable no devolvió el registro creado.');
+        return null;
+    }
+    cacheService.invalidateStartsWith('inventory_');
+    return mapAirtableRecordToInventoryItem(createdRecords[0]);
+  } catch (error) {
+    console.error('[createInventoryItem] Error al crear elemento en Airtable:', error);
+    return null;
+  }
+};
+
+// Actualizar un elemento de inventario existente
+export const updateInventoryItem = async (
+  itemId: string,
+  updates: Partial<InventoryItem>,
+): Promise<boolean> => {
+  try {
+    const fields: Record<string, any> = {};
+    // Mapear solo los campos que vienen en 'updates'
+    if (updates.nombre !== undefined) fields['Nombre'] = updates.nombre;
+    if (updates.apartamento !== undefined) {
+        fields['Apartamento'] = APP_TO_AIRTABLE_APT_MAP[updates.apartamento]; // Mapear a nombre de Airtable
+    }
+    if (updates.categoria !== undefined) fields['Categoria'] = updates.categoria;
+    if (updates.subcategoria !== undefined) fields['Subcategoria'] = updates.subcategoria;
+    if (updates.cantidad !== undefined) fields['Cantidad'] = updates.cantidad;
+    if (updates.estado !== undefined) fields['Estado'] = updates.estado;
+    if (updates.fechaAdquisicion !== undefined) fields['Fecha Adquisicion'] = updates.fechaAdquisicion;
+    if (updates.valorEstimado !== undefined) fields['Valor Estimado'] = updates.valorEstimado;
+    if (updates.proveedor !== undefined) fields['Proveedor'] = updates.proveedor;
+    if (updates.numeroSerie !== undefined) fields['Numero Serie'] = updates.numeroSerie;
+    if (updates.ubicacion !== undefined) fields['Ubicacion'] = updates.ubicacion;
+    if (updates.notas !== undefined) fields['Notas'] = updates.notas;
+    // 'foto' requeriría manejo especial
+
+    if (Object.keys(fields).length === 0) {
+        console.log('[updateInventoryItem] No hay campos para actualizar.');
+        return true; // O false, dependiendo de si se considera un error o no.
+    }
+
+    await inventoryBase(AIRTABLE_CONFIG.INVENTORY_TABLE).update(itemId, fields);
+    cacheService.invalidateStartsWith('inventory_');
+    return true;
+  } catch (error) {
+    console.error(`[updateInventoryItem] Error al actualizar elemento con ID ${itemId} en Airtable:`, error);
+    return false;
+  }
+};
+
+// Eliminar un elemento de inventario
+export const deleteInventoryItem = async (
+  itemId: string,
+): Promise<boolean> => {
+  try {
+    // Primero, obtenemos el item para verificar el apartamento
+    const record = await inventoryBase(AIRTABLE_CONFIG.INVENTORY_TABLE).find(itemId);
+    if (!record) {
+      console.error(`[deleteInventoryItem] Error: No se encontró el elemento con ID ${itemId}.`);
+      return false;
+    }
+
+    console.log(`[deleteInventoryItem] Eliminando elemento con ID: ${itemId}`);
+    await inventoryBase(AIRTABLE_CONFIG.INVENTORY_TABLE).destroy(itemId);
+    cacheService.invalidateStartsWith('inventory_');
+    console.log(`[deleteInventoryItem] Elemento con ID ${itemId} eliminado correctamente.`);
+    return true;
+  } catch (error) {
+    console.error(`[deleteInventoryItem] Error al eliminar elemento con ID ${itemId}:`, error);
+    return false;
+  }
+};
+
+// Analizar las columnas de la tabla de Airtable para mostrar información sobre ellas
+export const analyzeTableColumns = async () => {
+  try {
+    console.log('[analyzeTableColumns] Analizando columnas de la tabla...');
+    
+    // Obtener los primeros 10 registros para analizar la estructura
+    const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE)
+      .select({
+        maxRecords: 10
+      })
+      .firstPage();
+    
+    if (!records || records.length === 0) {
+      console.error('[analyzeTableColumns] No se encontraron registros para analizar.');
       return { columnNames: [], sampleValues: {} };
     }
     
-    const record = records[0];
-    const fields = record._rawJson.fields;
-    const columnNames = Object.keys(fields);
+    // Extraer todos los nombres de columnas únicos
+    const columnSet = new Set<string>();
+    const sampleValues: Record<string, any> = {};
+    
+    // Usar el primer registro para obtener los nombres de columnas
+    const firstRecord = records[0];
+    const fields = firstRecord.fields;
+    
+    Object.keys(fields).forEach(columnName => {
+      columnSet.add(columnName);
+      // Guardar el valor de muestra para esta columna
+      sampleValues[columnName] = fields[columnName];
+    });
+    
+    // Convertir el Set a un array y ordenar alfabéticamente
+    const columnNames = Array.from(columnSet).sort();
+    
+    console.log(`[analyzeTableColumns] Se encontraron ${columnNames.length} columnas.`);
     
     return {
       columnNames,
-      sampleValues: fields
+      sampleValues
     };
   } catch (error) {
-    console.error('[analyzeTableColumns] Error al analizar las columnas de la tabla:', error);
-    usesMockData = true;
-    return { 
-      columnNames: [
-        'Apartamento', 'Huésped', 'Llegada', 'Salida', 'Portal de reserva',
-        'Precio', 'Total', 'Comisión 20%', 'Pagado', 'Estado', 'Año', 'Mes'
-      ],
-      sampleValues: {} 
-    };
+    console.error('[analyzeTableColumns] Error al analizar columnas:', error);
+    throw error;
   }
 };
