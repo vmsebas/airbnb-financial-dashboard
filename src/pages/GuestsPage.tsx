@@ -1,14 +1,36 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { bookings } from '@/services/dataService';
+import { fetchBookings } from '@/services/airtableService';
+import { Booking } from '@/types';
 
 const GuestsPage = () => {
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const fetchedData = await fetchBookings();
+        setAllBookings(fetchedData);
+        setError(null);
+      } catch (err) {
+        console.error('Error al cargar las reservas en GuestsPage:', err);
+        setError('No se pudieron cargar los datos de huéspedes. Inténtalo más tarde.');
+        setAllBookings([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
   // Extract unique guests and their bookings
   const guestsMap = new Map();
   
-  bookings.forEach(booking => {
+  allBookings.forEach(booking => {
     if (booking.guest) {
       if (!guestsMap.has(booking.guest)) {
         guestsMap.set(booking.guest, {
@@ -44,6 +66,26 @@ const GuestsPage = () => {
     style: 'currency',
     currency: 'EUR',
   });
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl">Cargando datos de huéspedes...</p>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl text-red-500">{error}</p>
+        </div>
+      </MainLayout>
+    );
+  }
   
   return (
     <MainLayout>

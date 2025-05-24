@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate, Link } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -12,9 +11,6 @@ import { ApartmentSummary, Booking } from '@/types';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
 import { Home } from 'lucide-react';
 
-// Lista de apartamentos permitidos para usuarios normales
-const USER_ALLOWED_APARTMENTS = ['Trindade 1', 'Trindade 2', 'Trindade 4'];
-
 const ApartmentDetail = () => {
   const { apartmentName } = useParams<{ apartmentName: string }>();
   const decodedApartmentName = apartmentName ? decodeURIComponent(apartmentName) : '';
@@ -24,30 +20,18 @@ const ApartmentDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const dashboardPath = role === 'admin' ? '/admin' : '/user';
+  const dashboardPath = '/admin';
   
   console.log(`ApartmentDetail - Cargando apartamento: ${decodedApartmentName}, rol: ${role}`);
   
-  // Verificar si el usuario tiene permiso para ver este apartamento
-  if (role === 'user' && decodedApartmentName) {
-    const isAllowed = USER_ALLOWED_APARTMENTS.some(allowed => 
-      decodedApartmentName.includes(allowed)
-    );
-    
-    if (!isAllowed) {
-      console.log(`ApartmentDetail - Usuario sin acceso a: ${decodedApartmentName}, redirigiendo...`);
-      return <Navigate to="/unauthorized" replace />;
-    }
-  }
-
   useEffect(() => {
     const loadData = async () => {
       if (!decodedApartmentName) return;
       
       try {
         setLoading(true);
-        console.log(`ApartmentDetail - Solicitando reservas para ${decodedApartmentName} con rol ${role}`);
-        const fetchedBookings = await fetchBookingsByApartment(decodedApartmentName, role);
+        console.log(`ApartmentDetail - Solicitando reservas para ${decodedApartmentName}`);
+        const fetchedBookings = await fetchBookingsByApartment(decodedApartmentName);
         console.log(`ApartmentDetail - Recibidas ${fetchedBookings.length} reservas para ${decodedApartmentName}`);
         setBookings(fetchedBookings);
       } catch (err) {
@@ -59,7 +43,7 @@ const ApartmentDetail = () => {
     };
     
     loadData();
-  }, [decodedApartmentName, role]);
+  }, [decodedApartmentName]);
 
   // Aplicar filtros EXCEPTO el de apartamento (ya que estamos en la página de ese apartamento)
   const getApartmentFilteredBookings = () => {

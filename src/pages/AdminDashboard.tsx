@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { DashboardBase } from '@/components/dashboard/DashboardBase';
 import { AdminAnalysisDashboard } from '@/components/admin/AdminAnalysisDashboard';
 import { useFilters } from '@/context/FilterContext';
 import { fetchBookings } from '@/services/airtableService';
@@ -37,7 +36,7 @@ const AdminDashboard = () => {
         console.log('[AdminDashboard] Filtros aplicados:', appliedFilters);
         
         // Fetch bookings for current and previous year
-        const allBookings = await fetchBookings('admin');
+        const allBookings = await fetchBookings();
         console.log(`[AdminDashboard] Total de reservas obtenidas: ${allBookings.length}`);
         
         // Filter bookings
@@ -63,7 +62,7 @@ const AdminDashboard = () => {
           const comparisonResult = dashboardMetricsService.generateYearlyComparison(
             allBookings,
             appliedFilters.year,
-            appliedFilters.compareYears
+            appliedFilters.compareYears[0]
           );
           
           console.log('[AdminDashboard] Datos de comparación anual generados:', comparisonResult);
@@ -100,10 +99,20 @@ const AdminDashboard = () => {
   }, [appliedFilters]);
   
   // Create year labels for the comparison chart
-  const createYearLabels = () => {
-    return [appliedFilters.year, ...appliedFilters.compareYears].map(year => year.toString());
+  const createYearLabels = (): { [key: string]: string } => {
+    if (!comparisonData || !appliedFilters.compareMode || !appliedFilters.compareYears || appliedFilters.compareYears.length === 0) {
+      return {};
+    }
+    const yearsToLabel = [appliedFilters.year, ...appliedFilters.compareYears];
+    const labels: { [key: string]: string } = {};
+    yearsToLabel.forEach(year => {
+      if (year !== undefined && year !== null) { 
+        labels[year.toString()] = year.toString(); 
+      }
+    });
+    return labels;
   };
-  
+
   // Prepare comparison card data
   const prepareComparisonCardData = () => {
     if (!comparisonData) return [];
@@ -117,7 +126,6 @@ const AdminDashboard = () => {
 
   return (
     <MainLayout>
-      <DashboardBase>
         <div className="container mx-auto px-4 py-6">
           <h1 className="text-2xl font-bold mb-6">Panel de Administración</h1>
           
@@ -193,7 +201,6 @@ const AdminDashboard = () => {
             </div>
           )}
         </div>
-      </DashboardBase>
     </MainLayout>
   );
 };

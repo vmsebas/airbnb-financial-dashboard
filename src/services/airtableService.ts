@@ -1,30 +1,10 @@
 import Airtable from 'airtable';
 import { Booking } from '../types';
 import { AIRTABLE_CONFIG } from '../config/airtable';
-import { generateMockBookings } from '../utils/mockData';
 import cacheService from './cacheService';
 
 // Inicializar Airtable
 const base = new Airtable({ apiKey: AIRTABLE_CONFIG.API_KEY }).base(AIRTABLE_CONFIG.BASE_ID);
-
-// Lista de apartamentos permitidos para usuarios normales
-const USER_ALLOWED_APARTMENTS = ['Trindade 1', 'Trindade 2', 'Trindade 4'];
-
-// Flag para determinar si debemos usar datos de muestra
-let usesMockData = false;
-
-// Función para comprobar si un apartamento está permitido para usuarios normales
-// Exportamos la función para poder usarla en dataService.ts
-export const isApartmentAllowedForUser = (apartmentName: string): boolean => {
-  // Usar una comparación exacta en lugar de includes() para evitar falsos positivos
-  // Ejemplo: "No Trindade 1" sería detectado incorrectamente con includes()
-  return USER_ALLOWED_APARTMENTS.some(allowed => 
-    apartmentName === allowed || 
-    // También permitimos si el nombre del apartamento comienza con el nombre permitido seguido de un guion o espacio
-    apartmentName.startsWith(allowed + ' ') || 
-    apartmentName.startsWith(allowed + '-')
-  );
-};
 
 // Función para mapear los registros de Airtable al formato de nuestra aplicación
 const mapAirtableRecordToBooking = (record: any): Booking => {
@@ -105,197 +85,82 @@ const mapAirtableRecordToBooking = (record: any): Booking => {
   };
 };
 
-// Obtener todas las reservas según el rol del usuario con soporte para caché
-export const fetchBookings = async (role: string | null = 'admin', useCache: boolean = true): Promise<Booking[]> => {
-  const cacheKey = `bookings_${role}`;
+// Obtener todas las reservas (solo rol admin implícito) con soporte para caché
+export const fetchBookings = async (useCache: boolean = true): Promise<Booking[]> => {
+  const cacheKey = `bookings_admin`; // Clave de caché siempre para admin
   
-  // Verificar si hay datos en caché y si debemos usarlos
   if (useCache && cacheService.has(cacheKey)) {
+    console.log(`[fetchBookings] Usando datos de caché para ${cacheKey}`);
     return cacheService.get<Booking[]>(cacheKey) || [];
   }
   
   try {
-    // Si ya estamos usando datos de muestra, continuar con ellos
-    if (usesMockData) {
-      console.log(`[fetchBookings] Usando datos de muestra para rol: ${role}`);
-      const mockBookings = generateMockBookings(100); // Generar 100 reservas de muestra
-      
-      const result = role === 'admin' 
-        ? mockBookings 
-        : mockBookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
-      
-      // Guardar en caché
-      if (useCache) {
-        cacheService.set(cacheKey, result, 300); // 5 minutos de caché
-      }
-      
-      return result;
-    }
-    
-    console.log(`[fetchBookings] Solicitando reservas de Airtable con rol: ${role}`);
+    console.log(`[fetchBookings] Solicitando todas las reservas de Airtable`);
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select().all();
     const bookings = records.map(mapAirtableRecordToBooking);
     
-    let result: Booking[];
+    console.log(`[fetchBookings] Devolviendo todas las reservas (${bookings.length})`);
     
-    // Si el usuario es admin, devolvemos todas las reservas
-    if (role === 'admin') {
-      console.log(`[fetchBookings] Rol admin: Devolviendo todas las reservas (${bookings.length})`);
-      result = bookings;
-    } else {
-      // Si el usuario es normal, filtramos las reservas
-      const filteredBookings = bookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
-      console.log(`[fetchBookings] Rol user: Filtrando reservas ${filteredBookings.length} de ${bookings.length}`);
-      console.log('[fetchBookings] Apartamentos permitidos:', USER_ALLOWED_APARTMENTS);
-      console.log('[fetchBookings] Primeros 5 apartamentos filtrados:', filteredBookings.slice(0, 5).map(b => b.apartment));
-      result = filteredBookings;
-    }
-    
-    // Guardar en caché
     if (useCache) {
-      cacheService.set(cacheKey, result, 300); // 5 minutos de caché
+      cacheService.set(cacheKey, bookings, 300); // 5 minutos de caché
     }
     
-    return result;
+    return bookings;
   } catch (error) {
     console.error('[fetchBookings] Error al obtener las reservas de Airtable:', error);
-    
-    // Verificar si hay datos en caché a pesar del error
     if (cacheService.has(cacheKey)) {
-      console.log('[fetchBookings] Usando datos de caché debido al error');
+      console.warn('[fetchBookings] Usando datos de caché debido a error en Airtable');
       return cacheService.get<Booking[]>(cacheKey) || [];
     }
-    
-    // Marcar que estamos usando datos de muestra
-    usesMockData = true;
-    console.log('[fetchBookings] Cambiando a datos de muestra');
-    
-    // Generar datos de muestra
-    const mockBookings = generateMockBookings(100); // Generar 100 reservas de muestra
-    
-    // Filtrar según el rol
-    const result = role === 'admin' 
-      ? mockBookings 
-      : mockBookings.filter(booking => isApartmentAllowedForUser(booking.apartment));
-    
-    // Guardar en caché
-    if (useCache) {
-      cacheService.set(cacheKey, result);
-    }
-    
-    return result;
+    return []; // Devolver array vacío en caso de error y sin caché
   }
 };
 
-// Obtener reservas por apartamento según el rol con soporte para caché
-export const fetchBookingsByApartment = async (apartmentName: string, role: string | null = 'admin', useCache: boolean = true): Promise<Booking[]> => {
-  const cacheKey = `bookings_apartment_${apartmentName}_${role}`;
+// Obtener reservas por apartamento (solo rol admin implícito) con soporte para caché
+export const fetchBookingsByApartment = async (apartmentName: string, useCache: boolean = true): Promise<Booking[]> => {
+  const cacheKey = `bookings_apartment_${apartmentName.replace(/\s+/g, '_')}_admin`;
   
-  // Verificar si hay datos en caché y si debemos usarlos
   if (useCache && cacheService.has(cacheKey)) {
+    console.log(`[fetchBookingsByApartment] Usando datos de caché para ${cacheKey}`);
     return cacheService.get<Booking[]>(cacheKey) || [];
   }
   
   try {
-    // Si ya estamos usando datos de muestra, continuar con ellos
-    if (usesMockData) {
-      console.log(`[fetchBookingsByApartment] Usando datos de muestra para ${apartmentName} con rol: ${role}`);
-      const mockBookings = generateMockBookings(30, apartmentName); // Generar 30 reservas de muestra para este apartamento
-      
-      const result = (role === 'admin' || isApartmentAllowedForUser(apartmentName))
-        ? mockBookings
-        : [];
-      
-      // Guardar en caché
-      if (useCache) {
-        cacheService.set(cacheKey, result);
-      }
-      
-      return result;
-    }
+    console.log(`[fetchBookingsByApartment] Solicitando reservas de Airtable para el apartamento: ${apartmentName}`);
+    const filterFormula = `{Apartamento} = "${apartmentName.replace(/"/g, '\\"')}"`;
+    const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select({
+      filterByFormula: filterFormula
+    }).all();
     
-    // Para usuarios normales, verificar si tienen acceso a este apartamento
-    if (role === 'user' && !isApartmentAllowedForUser(apartmentName)) {
-      console.log(`[fetchBookingsByApartment] Usuario no autorizado para acceder a: ${apartmentName}`);
-      return [];
-    }
-    
-    console.log(`[fetchBookingsByApartment] Solicitando reservas para ${apartmentName} con rol ${role}`);
-    const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE)
-      .select({
-        filterByFormula: `{Apartamento} = '${apartmentName}'`
-      })
-      .all();
-    const mappedBookings = records.map(mapAirtableRecordToBooking);
-    console.log(`[fetchBookingsByApartment] Encontradas ${mappedBookings.length} reservas para ${apartmentName}`);
-    
-    // Guardar en caché
+    const bookings = records.map(mapAirtableRecordToBooking);
+    console.log(`[fetchBookingsByApartment] Devolviendo ${bookings.length} reservas para ${apartmentName}`);
+
     if (useCache) {
-      cacheService.set(cacheKey, mappedBookings);
+      cacheService.set(cacheKey, bookings, 300);
     }
     
-    return mappedBookings;
+    return bookings;
   } catch (error) {
-    console.error(`[fetchBookingsByApartment] Error al obtener las reservas para el apartamento ${apartmentName}:`, error);
-    
-    // Verificar si hay datos en caché a pesar del error
+    console.error(`[fetchBookingsByApartment] Error al obtener las reservas para ${apartmentName}:`, error);
     if (cacheService.has(cacheKey)) {
-      console.log('[fetchBookingsByApartment] Usando datos de caché debido al error');
+      console.warn(`[fetchBookingsByApartment] Usando datos de caché para ${apartmentName} debido a error en Airtable`);
       return cacheService.get<Booking[]>(cacheKey) || [];
     }
-    
-    // Marcar que estamos usando datos de muestra
-    usesMockData = true;
-    console.log('[fetchBookingsByApartment] Cambiando a datos de muestra');
-    
-    // Generar datos de muestra
-    const mockBookings = generateMockBookings(30, apartmentName); // Generar 30 reservas de muestra para este apartamento
-    
-    // Filtrar según el rol
-    const result = (role === 'admin' || isApartmentAllowedForUser(apartmentName))
-      ? mockBookings
-      : [];
-    
-    // Guardar en caché
-    if (useCache) {
-      cacheService.set(cacheKey, result);
-    }
-    
-    return result;
+    return [];
   }
 };
 
-// Obtener lista de apartamentos únicos según el rol del usuario con soporte para caché
-export const fetchUniqueApartments = async (role: string | null = 'admin', useCache: boolean = true): Promise<string[]> => {
-  const cacheKey = `apartments_${role}`;
-  
-  // Verificar si hay datos en caché y si debemos usarlos
+// Obtener lista de apartamentos únicos (solo rol admin implícito) con soporte para caché
+export const fetchUniqueApartments = async (useCache: boolean = true): Promise<string[]> => {
+  const cacheKey = 'unique_apartments_admin';
+
   if (useCache && cacheService.has(cacheKey)) {
+    console.log(`[fetchUniqueApartments] Usando datos de caché para ${cacheKey}`);
     return cacheService.get<string[]>(cacheKey) || [];
   }
-  
+
   try {
-    // Si ya estamos usando datos de muestra, continuar con ellos
-    if (usesMockData) {
-      console.log(`[fetchUniqueApartments] Usando datos de muestra para rol: ${role}`);
-      const mockApartments = [
-        'Trindade 1', 'Trindade 2', 'Trindade 4', 'Trindade 5', 
-        'White Cube', 'Blue Tile', 'I Love Lisboa'
-      ];
-      
-      const result = role === 'admin'
-        ? mockApartments
-        : mockApartments.filter(apt => isApartmentAllowedForUser(apt));
-      
-      // Guardar en caché
-      if (useCache) {
-        cacheService.set(cacheKey, result);
-      }
-      
-      return result;
-    }
-    
-    console.log(`[fetchUniqueApartments] Solicitando apartamentos con rol: ${role}`);
+    console.log(`[fetchUniqueApartments] Solicitando todos los apartamentos únicos de Airtable`);
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select({
       fields: ['Apartamento']
     }).all();
@@ -308,80 +173,35 @@ export const fetchUniqueApartments = async (role: string | null = 'admin', useCa
       }
     });
     
-    let apartmentArray = Array.from(apartments);
-    let result: string[];
-    
-    // Filtrar los apartamentos según el rol
-    if (role === 'user') {
-      const filteredApartments = apartmentArray.filter(apt => isApartmentAllowedForUser(apt));
-      console.log(`[fetchUniqueApartments] Rol user: Filtrando apartamentos ${filteredApartments.length} de ${apartmentArray.length}`);
-      console.log('[fetchUniqueApartments] Apartamentos permitidos:', USER_ALLOWED_APARTMENTS);
-      console.log('[fetchUniqueApartments] Apartamentos filtrados:', filteredApartments);
-      result = filteredApartments;
-    } else {
-      console.log(`[fetchUniqueApartments] Rol admin: Devolviendo todos los apartamentos (${apartmentArray.length})`);
-      result = apartmentArray;
-    }
-    
-    // Guardar en caché
+    const apartmentArray = Array.from(apartments);
+    console.log(`[fetchUniqueApartments] Devolviendo todos los apartamentos únicos (${apartmentArray.length})`);
+
     if (useCache) {
-      cacheService.set(cacheKey, result);
+      cacheService.set(cacheKey, apartmentArray, 300);
     }
     
-    return result;
+    return apartmentArray;
   } catch (error) {
     console.error('[fetchUniqueApartments] Error al obtener la lista de apartamentos:', error);
-    
-    // Verificar si hay datos en caché a pesar del error
     if (cacheService.has(cacheKey)) {
-      console.log('[fetchUniqueApartments] Usando datos de caché debido al error');
+      console.warn('[fetchUniqueApartments] Usando datos de caché debido a error en Airtable');
       return cacheService.get<string[]>(cacheKey) || [];
     }
-    
-    // Marcar que estamos usando datos de muestra
-    usesMockData = true;
-    console.log('[fetchUniqueApartments] Cambiando a datos de muestra');
-    
-    // Generar datos de muestra
-    const mockApartments = [
-      'Trindade 1', 'Trindade 2', 'Trindade 4', 'Trindade 5', 
-      'White Cube', 'Blue Tile', 'I Love Lisboa'
-    ];
-    
-    // Filtrar según el rol
-    const result = role === 'admin'
-      ? mockApartments
-      : mockApartments.filter(apt => isApartmentAllowedForUser(apt));
-    
-    // Guardar en caché
-    if (useCache) {
-      cacheService.set(cacheKey, result);
-    }
-    
-    return result;
+    return [];
   }
 };
 
 // Función para registrar un log detallado de las columnas encontradas
 export const analyzeTableColumns = async (): Promise<{ columnNames: string[], sampleValues: Record<string, any> }> => {
   try {
-    if (usesMockData) {
-      return { 
-        columnNames: [
-          'Apartamento', 'Huésped', 'Llegada', 'Salida', 'Portal de reserva',
-          'Precio', 'Total', 'Comisión 20%', 'Pagado', 'Estado', 'Año', 'Mes'
-        ],
-        sampleValues: {} 
-      };
-    }
-    
     const records = await base(AIRTABLE_CONFIG.BOOKINGS_TABLE).select({ maxRecords: 1 }).all();
     if (records.length === 0) {
+      console.warn('[analyzeTableColumns] No se encontraron registros en Airtable para analizar columnas.');
       return { columnNames: [], sampleValues: {} };
     }
     
     const record = records[0];
-    const fields = record._rawJson.fields;
+    const fields = record._rawJson && record._rawJson.fields ? record._rawJson.fields : {};
     const columnNames = Object.keys(fields);
     
     return {
@@ -390,12 +210,8 @@ export const analyzeTableColumns = async (): Promise<{ columnNames: string[], sa
     };
   } catch (error) {
     console.error('[analyzeTableColumns] Error al analizar las columnas de la tabla:', error);
-    usesMockData = true;
     return { 
-      columnNames: [
-        'Apartamento', 'Huésped', 'Llegada', 'Salida', 'Portal de reserva',
-        'Precio', 'Total', 'Comisión 20%', 'Pagado', 'Estado', 'Año', 'Mes'
-      ],
+      columnNames: [], 
       sampleValues: {} 
     };
   }
